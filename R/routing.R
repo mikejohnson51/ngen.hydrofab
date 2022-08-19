@@ -1,12 +1,3 @@
-#' Check for a package
-#' @param pkg package name
-
-check_pkg <- function(pkg) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    stop("Package '", pkg, "' is required for this functionality, but is not installed.")
-}
-
-
 #' Find Latest Version of NWM on NCEP
 #' @return character
 #' @export
@@ -19,7 +10,7 @@ latest_nwm_version = function(){
 
 
 #' hyAggregate data direcory
-#' @param dir if not supplies will default to `get("ngen_dat_dir", envir = hyAggregate_env)`
+#' @param dir if not supplies will default to `get("ngen_dat_dir", envir = ngen_env)`
 #' @return character
 #' @export
 
@@ -33,7 +24,6 @@ ngen_data_dir  = function (dir = NULL){
   }
 }
 
-
 #' Get Routelink Path
 #' @param dir if not supplies will default to `get("ngen_dat_dir", envir = ngen_env)`
 #' @param build if TRUE, and the file does not exist, should it be built?
@@ -41,8 +31,6 @@ ngen_data_dir  = function (dir = NULL){
 #' @export
 
 get_routelink_path = function(dir = ngen_data_dir(), build = TRUE){
-
-  check_pkg("RNetCDF")
 
   ver = latest_nwm_version()
 
@@ -105,7 +93,6 @@ get_routelink_names = function(build = FALSE){
 #' @return character
 #' @export
 
-
 get_routelink = function(atts = NULL, path = get_routelink_path(), build = TRUE){
 
   available_names = get_routelink_names()
@@ -133,14 +120,14 @@ get_routelink = function(atts = NULL, path = get_routelink_path(), build = TRUE)
 build_length_map = function (flowpaths, length_table) {
 
   select(st_drop_geometry(flowpaths), .data$id, comid = .data$member_comid) %>%
-    mutate(comid = strsplit(.data$comid, ",")) |>
-    tidyr::unnest(cols = .data$comid) |>
-    mutate(comid = as.numeric(gsub("\\..*","", comid))) |>
-    left_join(length_table, by = "comid") |>
-    group_by(id) |>
+    mutate(comid = strsplit(.data$comid, ",")) %>%
+    tidyr::unnest(cols = .data$comid) %>%
+    mutate(comid = as.numeric(gsub("\\..*","", comid))) %>%
+    left_join(length_table, by = "comid") %>%
+    group_by(id) %>%
     mutate(totLength = sum(lengthkm),
            perLength = round(lengthkm / totLength, 3),
-           totLength = NULL, lengthkm = NULL) |>
+           totLength = NULL, lengthkm = NULL) %>%
     ungroup()
 
 }
@@ -157,16 +144,15 @@ build_length_map = function (flowpaths, length_table) {
 
 add_slope = function(flowpaths) {
 
-
   # To calculate the true slope provided in NHDPlusFlowlineVAA
   # To get percent slope, the values (m/km) must be divided
   # by 1000 to get (m/m).
 
-  net_map =  build_length_map(flowpaths, length_table = get_vaa(c("lengthkm", "slope"), updated_network = FALSE)) |>
-    group_by(id) |>
-    summarize(slope = round(weighted.mean(.data$slope, w = .data$perLength, na.rm = TRUE), 3)) |>
-    right_join(flowpaths, by = "id") |>
-    mutate(slope = slope / 1000) |>
+  net_map =  build_length_map(flowpaths, length_table = get_vaa(c("lengthkm", "slope"), updated_network = FALSE)) %>%
+    group_by(id) %>%
+    summarize(slope = round(weighted.mean(.data$slope, w = .data$perLength, na.rm = TRUE), 3)) %>%
+    right_join(flowpaths, by = "id") %>%
+    mutate(slope = slope / 1000) %>%
     st_as_sf()
 }
 

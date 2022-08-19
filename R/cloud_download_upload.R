@@ -61,7 +61,7 @@ find_pu = function(location, pu = "vpu"){ get_boundaries(pu)[st_transform(locati
 #' Extract File Extension
 #' @details returns file extension
 #' @param x a file path
-#' @param prefix character string to precede extracted extension.  default = "". (Usfull if you want to keep the ".")
+#' @param prefix character string to precede extracted extension.  default = "". (Usefull if you want to keep the ".")
 #' @return character string
 #' @export
 

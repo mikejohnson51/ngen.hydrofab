@@ -182,8 +182,6 @@ aggregate_cfe_noahowp = function(gpkg = NULL,
   } else {
     return(traits)
   }
-
-
 }
 
 
