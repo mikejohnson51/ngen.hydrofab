@@ -23,24 +23,24 @@ latest_nwm_version = function(){
 #' @return character
 #' @export
 
-hyAggregate_data_dir  = function (dir = NULL){
+ngen_data_dir  = function (dir = NULL){
   if (is.null(dir)) {
-    return(get("ngen_dat_dir", envir = hyAggregate_env))
+    return(get("ngen_dat_dir", envir = ngen_env))
   }
   else {
-    assign("ngen_dat_dir", dir, envir = hyAggregate_env)
-    return(invisible(get("ngen_dat_dir", envir = hyAggregate_env)))
+    assign("ngen_dat_dir", dir, envir = ngen_env)
+    return(invisible(get("ngen_dat_dir", envir = ngen_env)))
   }
 }
 
 
 #' Get Routelink Path
-#' @param dir if not supplies will default to `get("ngen_dat_dir", envir = hyAggregate_env)`
+#' @param dir if not supplies will default to `get("ngen_dat_dir", envir = ngen_env)`
 #' @param build if TRUE, and the file does not exist, should it be built?
 #' @return character
 #' @export
 
-get_routelink_path = function(dir = hyAggregate_data_dir(), build = TRUE){
+get_routelink_path = function(dir = ngen_data_dir(), build = TRUE){
 
   check_pkg("RNetCDF")
 

@@ -4,10 +4,10 @@
 \alias{get_routelink_path}
 \title{Get Routelink Path}
 \usage{
-get_routelink_path(dir = hyAggregate_data_dir(), build = TRUE)
+get_routelink_path(dir = ngen_data_dir(), build = TRUE)
 }
 \arguments{
-\item{dir}{if not supplies will default to \code{get("ngen_dat_dir", envir = hyAggregate_env)}}
+\item{dir}{if not supplies will default to \code{get("ngen_dat_dir", envir = ngen_env)}}
 
 \item{build}{if TRUE, and the file does not exist, should it be built?}
 }
