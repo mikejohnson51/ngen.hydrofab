@@ -13,7 +13,6 @@ hydraulic network manipulation tool chains to build nextgen ready
 hydrofabric products.
 
 ``` r
-
 library('hydrofab')
 library('ngen.hydrofab')
 library('glue')
@@ -24,31 +23,31 @@ VPU = "01"
 outfile = glue("{base}nextgen/nextgen_{VPU}.gpkg")
 
 
+# Read Uniform Hydrofabrci for VPU 01 and apply nexus toplogy, build crosswalk ect
 ngen = get_hydrofabric(VPU = VPU, 
-                type = "uniform",
-                dir = glue("{base}uniform"),
-                overwrite = FALSE) %>% 
+                        type = "uniform",
+                        dir = glue("{base}uniform"),
+                        overwrite = FALSE) %>% 
   apply_nexus_topology()
 
-
+# Add flowpath attributes fro routing
 ngen$flowpath_attributes <-  length_average_routelink(flowpaths = ngen$flowpaths,
                                                      rl_path = get_routelink_path())
 
-outfile = write_hydrofabric(ngen, outfile)
-
-aggregate_cfe_noahowp(gpkg                = outfile,
-                      dir                 = '/Volumes/Transcend/nwmCONUS-v216/',
-                      add_to_gpkg         = TRUE,
-                      add_weights_to_gpkg = TRUE,
-                      log                 = TRUE)
-
-add_grid_mapping(gpkg      = outfile,
-                 template  = "/Users/mjohnson/Downloads/AORC-OWP_2012063021z.nc4",
-                 grid_name = "aorc_weights",
-                 log       = TRUE)}
+# Write all layers to gpkg, add CFE and NOAHOWP attributes, then add AORC weight map
+write_hydrofabric(ngen, outfile) %>% 
+  aggregate_cfe_noahowp(dir  = '/Volumes/Transcend/nwmCONUS-v216/',
+                          add_to_gpkg         = TRUE,
+                          add_weights_to_gpkg = TRUE,
+                          log                 = TRUE) %>% 
+  add_grid_mapping(gpkg      = outfile,
+                   template  = "./AORC-OWP_2012063021z.nc4",
+                   grid_name = "aorc_weights",
+                   log       = TRUE)}
 ```
 
 ``` r
+# See what was built
 sf::st_layers(outfile)
 #> Driver: GPKG 
 #> Available layers:
@@ -64,11 +63,16 @@ sf::st_layers(outfile)
 #> 9           aorc_weights            NA   540452      3                 <NA>
 ```
 
+Nextgen is not yet ready to leverage geopackage files so each layer of
+the geopackage is exported as a geojson, json, or csv depending on
+datatype:
+
 ``` r
 write_ngen_dir(gpkg = outfile, dir = glue("{base}nextgen/nextgen_{VPU}"))
 ```
 
 ``` r
+#See what was made:
 fs::dir_tree(dir)
 #> /Volumes/Transcend/ngen/CONUS-hydrofabric/nextgen/nextgen_01
 #> ├── aorc_weight_grids.csv
