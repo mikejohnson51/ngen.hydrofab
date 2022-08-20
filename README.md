@@ -13,9 +13,9 @@ hydraulic network manipulation tool chains to build nextgen ready
 hydrofabric products.
 
 ``` r
-library('hydrofab')
-library('ngen.hydrofab')
-library('glue')
+library(hydrofab)
+library(ngen.hydrofab)
+library(glue)
 
 base = '/Volumes/Transcend/ngen/CONUS-hydrofabric/'
 VPU = "01"
@@ -23,7 +23,7 @@ VPU = "01"
 outfile = glue("{base}nextgen/nextgen_{VPU}.gpkg")
 
 
-# Read Uniform Hydrofabrci for VPU 01 and apply nexus toplogy, build crosswalk ect
+# Read Uniform Hydrofabric for VPU 01 and apply nexus toplogy, build crosswalk ect
 ngen = get_hydrofabric(VPU = VPU, 
                         type = "uniform",
                         dir = glue("{base}uniform"),
@@ -36,14 +36,13 @@ ngen$flowpath_attributes <-  length_average_routelink(flowpaths = ngen$flowpaths
 
 # Write all layers to gpkg, add CFE and NOAHOWP attributes, then add AORC weight map
 write_hydrofabric(ngen, outfile) %>% 
+  
   aggregate_cfe_noahowp(dir  = '/Volumes/Transcend/nwmCONUS-v216/',
-                          add_to_gpkg         = TRUE,
-                          add_weights_to_gpkg = TRUE,
-                          log                 = TRUE) %>% 
-  add_grid_mapping(gpkg      = outfile,
-                   template  = "./AORC-OWP_2012063021z.nc4",
-                   grid_name = "aorc_weights",
-                   log       = TRUE)}
+                        add_to_gpkg         = TRUE,
+                        add_weights_to_gpkg = TRUE) %>% 
+  
+  add_grid_mapping(template  = "AORC-OWP_2012063021z.nc4",
+                   grid_name = "aorc_weights")
 ```
 
 ``` r
