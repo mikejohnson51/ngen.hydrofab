@@ -10,7 +10,7 @@
 #' @param term_cut terminal IDs begin above a defined threshold
 #' @return list
 #' @importFrom sf read_sf
-#' @importFrom dplyr select mutate left_join everything
+#' @importFrom dplyr select mutate left_join everything distinct
 #' @export
 
 
@@ -22,16 +22,12 @@ apply_nexus_topology = function(gpkg,
                                 term_cut = 1e9,
                                 verbose = TRUE){
 
-
-
   hyaggregate_log("INFO", "\n--- Applying HY_feature topology ---\n", verbose)
 
-  network_list = read_hydrofabric(gpkg)
+  network_list = read_hydrofabric(gpkg, verbose = verbose)
 
-  network_list$flowpaths <- assign_nex_ids(fline = network_list$flowpaths, term_cut = term_cut)
-
-  lu = read_sf(gpkg, "lookup_table") %>%
-    select(id = aggregated_ID, NHDPlusV2_COMID, NHDPlusV2_COMID_part, mainstem, POI_ID, POI_TYPE, POI_VALUE)
+  # Slope is unitless (e.g. m/m)
+  network_list$flowpaths = add_slope(network_list$flowpaths)
 
   network_list$catchment_edge_list <- get_catchment_edges_terms(flowpaths = network_list$flowpaths,
                                                       nexus_prefix = nexus_prefix,
@@ -45,36 +41,36 @@ apply_nexus_topology = function(gpkg,
                                                       catchment_prefix = waterbody_prefix,
                                                       term_cut = term_cut)
 
-
-
   network_list$crosswalk = read_sf(gpkg, "lookup_table") %>%
-    select(id = aggregated_ID, NHDPlusV2_COMID, NHDPlusV2_COMID_part, mainstem, POI_ID, POI_TYPE, POI_VALUE) %>%
+    select(id = aggregated_ID,
+           NHDPlusV2_COMID, NHDPlusV2_COMID_part,
+           reconciled_ID, mainstem,
+           POI_ID, POI_TYPE, POI_VALUE) %>%
     mutate(id = paste0(waterbody_prefix, id)) %>%
     left_join(network_list$flowpath_edge_list, by = "id") %>%
-    select(id, toid, everything())
+    select(id, toid, everything()) %>%
+    distinct()
 
-  flush_prefix(network_list$flowpath_edge_list, "id") %>%
-    right_join(lu, by = 'id') %>%
-    mutate(id = paste0(waterbody_prefix, id))
-
-
-  nex =  get_nexus(fline = network_list$flowpaths,
-                   term_cut = term_cut,
-                   nexus_prefix = nexus_prefix,
-                   terminal_nexus_prefix = terminal_nexus_prefix)
-
-  network_list$nexus =  left_join(nex,  network_list$catchment_edge_list, by = "id")
+  network_list$nexus =  get_nexus(fline = network_list$flowpaths,
+                                  term_cut = term_cut,
+                                  nexus_prefix = nexus_prefix,
+                                  terminal_nexus_prefix = terminal_nexus_prefix) %>%
+    left_join(network_list$catchment_edge_list, by = "id")
 
   hyaggregate_log("INFO", glue("Created {nrow(network_list$nexus)} nexus locations"), verbose)
 
-  network_list$catchments <- get_catchment_data(network_list$catchments,
-                                                network_list$catchment_edge_list,
+  network_list$catchments <- get_catchment_data(catchment = network_list$catchments,
+                                                catchment_edge_list = network_list$catchment_edge_list,
                                                 catchment_prefix = catchment_prefix)
+
 
   network_list$flowpaths  <- get_flowpath_data( fline = network_list$flowpaths,
                                                 catchment_edge_list = network_list$catchment_edge_list,
                                                 waterbody_prefix = waterbody_prefix,
                                                 catchment_prefix = catchment_prefix)
+
+  filter(network_list$flowpaths, id == 10404) %>%
+    select(id, toid)
 
   network_list
 
@@ -93,6 +89,7 @@ apply_nexus_topology = function(gpkg,
 #' @export
 #' @importFrom sf st_drop_geometry
 #' @importFrom dplyr select mutate left_join bind_rows `%>%`
+#' @importFrom nhdplusTools rename_geometry
 
 get_catchment_edges_terms = function(flowpaths,
                                      nexus_prefix = "nex-",
@@ -102,6 +99,8 @@ get_catchment_edges_terms = function(flowpaths,
 
   fline = select(st_drop_geometry(flowpaths), id, toid)
 
+  filter(fline, id == 10404)
+
   fline = flush_prefix(fline, c("id", "toid"))
 
   obj1 = fline %>%
@@ -109,6 +108,8 @@ get_catchment_edges_terms = function(flowpaths,
            toid = paste0(
              ifelse(.data$toid > term_cut, terminal_nexus_prefix, nexus_prefix), .data$toid
            ))
+
+  filter(obj1, id == "cat-10404")
 
   obj2 =  data.frame(id = unique(fline$toid)) %>%
     left_join(mutate(select(fline, id), toid = id), by = "id") %>%
@@ -171,6 +172,8 @@ get_nexus <- function(fline, term_cut = 1e9,
     select(.data$X, .data$Y) %>%
     st_as_sf(coords = c("X", "Y"), crs = st_crs(fline))
 
+  print(nrow(nexus))
+
   nexus$id <- fline$to_nID
   nexus$type <- ifelse(is.na(fline$poi_id), "infered", "poi")
 
@@ -182,6 +185,7 @@ get_nexus <- function(fline, term_cut = 1e9,
       ungroup()
   }
 
+  write_sf(nexus, data/test_nex.gpkg)
   return(nexus)
 }
 
@@ -267,7 +271,6 @@ get_flowpath_data = function(fline,
     fline = add_slope(flowpaths = fline)
   }
 
-
   select(
       fline,
       id = .data$id,
@@ -278,8 +281,105 @@ get_flowpath_data = function(fline,
       tot_drainage_areasqkm = tot_drainage_areasqkm,
       order = order
     ) %>%
-    mutate(id = paste0(waterbody_prefix, .data$id)) %>%
+    mutate(id = paste0(waterbody_prefix, .data$id),
+           slope_percent = 100 * .data$slope_percent) %>%
     mutate(realized_catchment = gsub(waterbody_prefix, catchment_prefix, id)) %>%
     left_join(catchment_edge_list, by = c("realized_catchment" = "id"))
 
 }
+
+
+#' Merge VPU NextGen files into single CONUS file
+#'
+#' @param gpkg a set of geopackage paths
+#' @param outfile a file.path to write to
+#' @return outfile path
+#' @export
+#' @importFrom  sf read_sf write_sf
+#' @importFrom dplyr bind_rows
+
+national_merge = function(gpkg, outfile){
+
+  # catchments
+  lapply(gpkg, read_sf, "divides") %>%
+    bind_rows() %>%
+    write_sf(outfile, "divides")
+
+  # flowpaths
+  lapply(gpkg, read_sf, "flowpaths") %>%
+    bind_rows() %>%
+    write_sf(outfile, "flowpaths")
+
+   # nexus
+  lapply(gpkg, read_sf, "nexus") %>%
+    bind_rows() %>%
+    write_sf(outfile, "nexus")
+
+  # flowpath_edge_list
+  lapply(gpkg, read_sf, "flowpath_edge_list") %>%
+    bind_rows() %>%
+    write_sf(outfile, "flowpath_edge_list")
+
+  # flowpath_attributes
+  lapply(gpkg, read_sf, "flowpath_attributes") %>%
+    bind_rows() %>%
+    write_sf(outfile, "flowpath_attributes")
+
+  # crosswalk
+  lapply(gpkg, read_sf, "crosswalk") %>%
+    bind_rows() %>%
+    write_sf(outfile, "crosswalk")
+
+  # cfe_noahowp_attributes
+  lapply(gpkg, read_sf, "cfe_noahowp_attributes") %>%
+    bind_rows() %>%
+    write_sf(outfile, "cfe_noahowp_attributes")
+
+  outfile
+}
+
+
+realign_topology = function(network_list, term_cut = 1e9){
+
+  tmp = network_list$flowpaths
+
+  term_fl      <- filter(tmp, .data$toid == 0)
+  term_fl$toid <- (nrow(tmp) + term_cut + 1:nrow(term_fl))
+
+  tmp     = bind_rows(term_fl, filter(tmp, !.data$id %in% term_fl$id))
+  nrow(tmp)
+
+  ends = tmp  %>%
+    nhdplusTools::rename_geometry('geometry') %>%
+    mutate(geometry = nhdplusTools::get_node(., "end")$geometry)
+
+  nrow(ends)
+
+
+  starts_ends = bind_rows(get_node(tmp, "start"), get_node(tmp, "end"))
+
+  emap     = st_intersects(ends, starts_ends)
+  tmp$type = ifelse(lengths(emap) > 1, "nex", "jun")
+  tmp$type = ifelse(tmp$toid > term_cut, "term", tmp$type)
+
+  ends2 = left_join(st_drop_geometry(select(ends, id)), st_drop_geometry(select(tmp, id, type)), by = "id")
+
+  tmap = st_intersects(ends, tmp)
+
+  df = data.frame(
+    id            = rep(ends2$id, times = lengths(tmap)),
+    type          = rep(ends2$type, times = lengths(tmap)),
+    touches       = tmp$id[unlist(tmap)],
+    touches_toID  = tmp$toid[unlist(tmap)]) %>%
+    filter(.data$id != .data$touches) %>%
+    left_join(st_drop_geometry(select(tmp, .data$id, .data$toid)), by = "id") %>%
+    mutate(real_toID = ifelse(.data$type == "jun", .data$touches_toID, .data$toid)) %>%
+    select(.data$id, toid = .data$real_toID) %>%
+    distinct() %>%
+    left_join(select(tmp, -.data$toid), by = "id")  %>%
+    bind_rows(term_fl) %>%
+    st_as_sf() %>%
+    select(-.data$type)
+
+}
+
