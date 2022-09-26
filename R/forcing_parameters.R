@@ -13,6 +13,7 @@
 #' @importFrom zonal weight_grid execute_zonal
 #' @importFrom dplyr mutate select right_join left_join
 #' @importFrom sf st_centroid st_coordinates st_drop_geometry
+#' @importFrom hydrofab add_areasqkm
 
 forcing_parameters = function(gpkg, dem, add_to_gpkg = TRUE){
 
@@ -22,7 +23,7 @@ forcing_parameters = function(gpkg, dem, add_to_gpkg = TRUE){
   slope_m_km = 1000 * terrain(DEM_m, v = "slope", unit = "radians")
   aspect = terrain(DEM_m, v = "aspect", unit = "degree")
 
-  w = weight_grid(data, geom, ID = "id")
+  w = weight_grid(DEM_m, geom, ID = "id", progress = FALSE)
 
   summary1 = execute_zonal(c(DEM_m, slope_m_km),
                            w = w,
