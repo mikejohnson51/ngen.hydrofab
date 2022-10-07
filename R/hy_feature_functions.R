@@ -1,18 +1,21 @@
 add_nonnetwork_nexus_location  = function(divides,
                                           coastal_nexus_prefix = "cnx-",
-                                          internal_nexus_prefix = "inx-"){
+                                          internal_nexus_prefix = "inx-",
+                                          waterbody_prefix = "wb-"){
 
   coastal_nex = suppressWarnings({ st_point_on_surface(filter(divides, type == "coastal") ) }) %>%
+    flush_prefix(c('id', 'toid')) %>%
     mutate(id = paste0(coastal_nexus_prefix, id),
            type = "coastal",
-           toid = "NA") %>%
+           toid = paste0(waterbody_prefix, 0)) %>%
     select(id, toid, type) %>%
     rename_geometry("geometry")
 
   internal_nex = suppressWarnings({ st_point_on_surface(filter(divides, type == "internal") ) }) %>%
+    flush_prefix(c('id', 'toid')) %>%
     mutate(id = paste0(internal_nexus_prefix, id),
            type = "internal",
-           toid = "NA") %>%
+           toid = paste0(waterbody_prefix, 0)) %>%
     select(id, toid, type) %>%
     rename_geometry("geometry")
 
@@ -22,15 +25,16 @@ add_nonnetwork_nexus_location  = function(divides,
 
 
 #' Apply Nexus Topology
-#' This function enforces the nexus-->flowpath topology and adds a catchment and flowpath
-#' edgelist to the network_list object. Additionally, nexus locations are identified and
-#' added as well.
-#' @param network_list  a list containing flowpath and catchment `sf` objects
-#' @param nexus_prefix  character prefix for nexus IDs
+#' This function enforces the nexus-->flowpath topology and adds nexus locations,
+#' a catchment edge list, a flowpath edge list, and a lookup_table to the
+#' network_list object.
+#' @param network_list          list containing flowpath and catchment `sf` objects
+#' @param nexus_prefix          character prefix for nexus IDs
 #' @param terminal_nexus_prefix character prefix for terminal nexus IDs
-#' @param catchment_prefix character prefix for catchment IDs
-#' @param waterbody_prefix character prefix for catchment IDs
-#' @param term_cut terminal IDs begin above a defined threshold
+#' @param coastal_nexus_prefix  character prefix for coastal nexus IDs
+#' @param internal_nexus_prefix character prefix for internal nexus IDs
+#' @param catchment_prefix      character prefix for catchment IDs
+#' @param waterbody_prefix      character prefix for catchment IDs
 #' @return list
 #' @importFrom sf read_sf
 #' @importFrom dplyr select mutate left_join everything distinct
@@ -50,16 +54,27 @@ apply_nexus_topology = function(gpkg,
   network_list = read_hydrofabric(gpkg, verbose = verbose)
 
   ngen_flows   = realign_topology(network_list,
-                                  nexus_prefix = "nex-",
-                                  terminal_nexus_prefix = "tnx-",
-                                  coastal_nexus_prefix = "cnx-",
-                                  internal_nexus_prefix = "inx-",
-                                  catchment_prefix = "cat-",
-                                  waterbody_prefix = "wb-")
+                                  nexus_prefix = nexus_prefix,
+                                  terminal_nexus_prefix = terminal_nexus_prefix,
+                                  coastal_nexus_prefix = coastal_nexus_prefix,
+                                  internal_nexus_prefix = internal_nexus_prefix,
+                                  catchment_prefix = catchment_prefix,
+                                  waterbody_prefix = waterbody_prefix)
 
-  ngen_flows$catchment_edge_list = add_prefix(ngen_flows$topo , hf_prefix = "cat-", nexus_prefix = "nex-")
+  ngen_flows$catchment_edge_list = add_prefix(topo = ngen_flows$topo ,
+                                              hf_prefix = catchment_prefix,
+                                              nexus_prefix = nexus_prefix,
+                                              terminal_nexus_prefix = terminal_nexus_prefix,
+                                              coastal_nexus_prefix = coastal_nexus_prefix,
+                                              internal_nexus_prefix = internal_nexus_prefix)
 
-  ngen_flows$flowpath_edge_list  = add_prefix(ngen_flows$topo , hf_prefix = "wb-", nexus_prefix = "nex-")
+  ngen_flows$flowpath_edge_list  = add_prefix(ngen_flows$topo ,
+                                              hf_prefix = waterbody_prefix,
+                                              nexus_prefix = nexus_prefix,
+                                              terminal_nexus_prefix = terminal_nexus_prefix,
+                                              coastal_nexus_prefix = coastal_nexus_prefix,
+                                              internal_nexus_prefix = internal_nexus_prefix)
+
 
   ngen_flows$topo = NULL
 
@@ -71,7 +86,13 @@ apply_nexus_topology = function(gpkg,
     mutate(id = paste0(waterbody_prefix, id)) %>%
     left_join(ngen_flows$flowpath_edge_list, by = "id") %>%
     select(id, toid, everything()) %>%
-    distinct()
+    distinct() %>%
+    mutate(type = NULL)
+
+  tmp = select(ngen_flows$lookup_table, poi_id = POI_ID, poi_type = POI_TYPE, poi_value = POI_VALUE) %>%
+    filter(!is.na(poi_id))
+
+  ngen_flows$nexus  =  left_join(ngen_flows$nexus, tmp, by = "poi_id")
 
   ngen_flows
 
@@ -79,7 +100,6 @@ apply_nexus_topology = function(gpkg,
 
 
 #' Merge VPU NextGen files into single CONUS file
-#'
 #' @param gpkg a set of geopackage paths
 #' @param outfile a file.path to write to
 #' @return outfile path
@@ -127,6 +147,20 @@ national_merge = function(gpkg, outfile){
   outfile
 }
 
+
+#' Realign Topology to a nexus network
+#' @param network_list          list containing flowpath and catchment `sf` objects
+#' @param nexus_prefix          character prefix for nexus IDs
+#' @param terminal_nexus_prefix character prefix for terminal nexus IDs
+#' @param coastal_nexus_prefix  character prefix for coastal nexus IDs
+#' @param internal_nexus_prefix character prefix for internal nexus IDs
+#' @param catchment_prefix      character prefix for catchment IDs
+#' @param waterbody_prefix      character prefix for catchment IDs
+#' @return list
+#' @export
+#' @importFrom  dplyr select mutate left_join bind_rows group_by mutate ungroup filter distinct bind_rows slice_max rename case_when
+#' @importFrom  nhdplusTools rename_geometry get_node
+#' @importFrom  sf st_drop_geometry st_intersects st_as_sf
 
 realign_topology = function(network_list,
                             nexus_prefix = NULL,
@@ -249,11 +283,20 @@ realign_topology = function(network_list,
 
 
   divide =  left_join(select(network_list$catchments, -.data$toid),
-                  select(topo, -type), by = "id")  %>%
+                      select(topo, -type), by = "id")  %>%
     st_as_sf() %>%
     rename_geometry('geometry') %>%
+    mutate(toid = ifelse(type %in% c("coastal", "internal"), id, toid)) %>%
+    mutate(nex_pre = case_when(
+      type == "terminal" ~ terminal_nexus_prefix,
+      type == "coastal"  ~ coastal_nexus_prefix,
+      type == "internal" ~ internal_nexus_prefix,
+      TRUE ~ nexus_prefix
+    )) %>%
     mutate(id = paste0(catchment_prefix, id),
-           toid = paste0(ifelse(type == "terminal", terminal_nexus_prefix, nexus_prefix), toid)) %>%
+           toid = paste0(nex_pre, toid),
+           topo_type = NULL,
+           nex_pre = NULL) %>%
     select(id, toid, type, areasqkm)
 
   # The nexuses defined so far are those part of the dendritic network,
@@ -267,13 +310,22 @@ realign_topology = function(network_list,
     select(id, toid, poi_id, type) %>%
     flush_prefix(col = c("id", "toid")) %>%
     distinct() %>%
-    mutate(id = paste0(ifelse(type == "terminal", terminal_nexus_prefix, nexus_prefix), id ),
-           toid = paste0(waterbody_prefix, toid)) %>%
+    mutate(nex_pre = case_when(
+      type == "terminal" ~ terminal_nexus_prefix,
+      type == "coastal"  ~ coastal_nexus_prefix,
+      type == "internal" ~ internal_nexus_prefix,
+      TRUE ~ nexus_prefix
+    )) %>%
+    mutate(id = paste0(nex_pre, id),
+           toid = paste0(waterbody_prefix, toid),
+           nex_pre = NULL) %>%
+    mutate(toid = ifelse(type == "terminal", paste0(waterbody_prefix, 0), toid )) %>%
     bind_rows(
       add_nonnetwork_nexus_location(
         divide,
         coastal_nexus_prefix = coastal_nexus_prefix,
-        internal_nexus_prefix = internal_nexus_prefix
+        internal_nexus_prefix = internal_nexus_prefix,
+        waterbody_prefix = waterbody_prefix
       )
     )
 
@@ -297,18 +349,35 @@ realign_topology = function(network_list,
 }
 
 
-add_prefix = function(topo = topo, hf_prefix = "cat-", nexus_prefix = "nex-"){
+add_prefix = function(topo, hf_prefix = "cat-",
+                      nexus_prefix = "nex-",
+                      terminal_nexus_prefix = "tnx-",
+                      coastal_nexus_prefix  = "cnx-",
+                      internal_nexus_prefix = "inx-"){
 
   t1 = filter(topo, topo_type == "network") %>%
+    mutate(nex_pre = case_when(
+      type == "terminal" ~ terminal_nexus_prefix,
+      type == "coastal"  ~ coastal_nexus_prefix,
+      type == "internal" ~ internal_nexus_prefix,
+      TRUE ~ nexus_prefix
+    )) %>%
     mutate(id = paste0(hf_prefix, id),
-           toid = paste0(nexus_prefix, toid))
+           toid = paste0(nex_pre, toid),
+           nex_pre = NULL)
 
   t2 = filter(topo, topo_type == "nexus") %>%
-    mutate(id = paste0(nexus_prefix, id),
-           toid = paste0(hf_prefix, toid))
+    mutate(nex_pre = case_when(
+      type == "terminal" ~ terminal_nexus_prefix,
+      type == "coastal"  ~ coastal_nexus_prefix,
+      type == "internal" ~ internal_nexus_prefix,
+      TRUE ~ nexus_prefix
+    )) %>%
+    mutate(id    = paste0(nex_pre,id),
+           toid = paste0(hf_prefix, toid),
+           nex_pre = NULL)
 
-  bind_rows(t1,t2) %>%
-    select(id, toid) %>%
-    arrange(id)
+  bind_rows(t1,t2)   %>%
+    select(id, toid, type)
 
 }
