@@ -11,7 +11,7 @@ upload_to_aws = function(path,
                          prefix = "hf_1.0",
                          verbose = TRUE){
 
-  check_pkg("aws.s3")
+  #check_pkg("aws.s3")
 
   prefix = gsub("/$", "", prefix)
 
@@ -74,6 +74,7 @@ find_pu = function(location, pu = "vpu"){ get_boundaries(pu)[st_transform(locati
 #' @param x A string vector of paths to files to be uploaded
 #' @param item a character ScienceBase ID corresponding to the item (default = '629a4246d34ec53d276f446d')
 #' @importFrom sbtools item_replace_files
+#' @export
 
 upload_to_sb = function(x, item = "629a4246d34ec53d276f446d") {
   authenticate_sb(Sys.getenv("sb_user", unset=""), Sys.getenv("sb_pass", unset=""))

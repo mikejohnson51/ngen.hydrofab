@@ -1,4 +1,4 @@
-#' Aggregated CFE variables frome NWM
+#' Add CFE and NOAH-OWP attributes
 #' @param gpkg a geopackage with aggregation units
 #' @param catchment_name the layer name of the aggregation units
 #' @param flowline_name the layer name of the flowpath units
@@ -7,7 +7,7 @@
 #' @param precision the precision of the computations
 #' @return NULL
 #' @export
-#' @importFrom sf read_sf st_drop_geometry st_is_empty
+#' @importFrom sf read_sf st_drop_geometry st_is_empty st_layers
 #' @importFrom zonal weight_grid execute_zonal
 #' @importFrom dplyr select mutate filter bind_cols rename inner_join group_by summarize across everything right_join
 #' @importFrom tidyr unnest_longer
@@ -17,8 +17,7 @@
 #' @importFrom terra sources
 #' @importFrom hydrofab read_hydrofabric hyaggregate_log
 
-
-aggregate_cfe_noahowp = function(gpkg = NULL,
+add_cfe_noahowp_attributes = function(gpkg = NULL,
                                  dir = NULL,
                                  catchment_name = NULL,
                                  flowline_name  = NULL,

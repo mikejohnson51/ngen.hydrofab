@@ -4,16 +4,17 @@
 \alias{apply_nexus_topology}
 \title{Apply Nexus Topology
 This function enforces the nexus-->flowpath topology and adds a catchment and flowpath
-edgelist to the network_list object. Additonally, nexus locations are identified and
+edgelist to the network_list object. Additionally, nexus locations are identified and
 added as well.}
 \usage{
 apply_nexus_topology(
   gpkg,
   nexus_prefix = "nex-",
-  terminal_nexus_prefix = "tnex-",
+  terminal_nexus_prefix = "tnx-",
+  coastal_nexus_prefix = "cnx-",
+  internal_nexus_prefix = "inx-",
   catchment_prefix = "cat-",
   waterbody_prefix = "wb-",
-  term_cut = 1e+09,
   verbose = TRUE
 )
 }
@@ -26,9 +27,9 @@ apply_nexus_topology(
 
 \item{waterbody_prefix}{character prefix for catchment IDs}
 
-\item{term_cut}{terminal IDs begin above a defined threshold}
-
 \item{network_list}{a list containing flowpath and catchment \code{sf} objects}
+
+\item{term_cut}{terminal IDs begin above a defined threshold}
 }
 \value{
 list
@@ -36,6 +37,6 @@ list
 \description{
 Apply Nexus Topology
 This function enforces the nexus-->flowpath topology and adds a catchment and flowpath
-edgelist to the network_list object. Additonally, nexus locations are identified and
+edgelist to the network_list object. Additionally, nexus locations are identified and
 added as well.
 }

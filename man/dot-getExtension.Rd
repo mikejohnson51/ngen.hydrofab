@@ -9,7 +9,7 @@
 \arguments{
 \item{x}{a file path}
 
-\item{prefix}{character string to precede extracted extension.  default = "". (Usfull if you want to keep the ".")}
+\item{prefix}{character string to precede extracted extension.  default = "". (Usefull if you want to keep the ".")}
 }
 \value{
 character string

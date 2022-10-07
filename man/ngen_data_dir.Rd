@@ -7,7 +7,7 @@
 ngen_data_dir(dir = NULL)
 }
 \arguments{
-\item{dir}{if not supplies will default to \code{get("ngen_dat_dir", envir = hyAggregate_env)}}
+\item{dir}{if not supplies will default to \code{get("ngen_dat_dir", envir = ngen_env)}}
 }
 \value{
 character

@@ -46,23 +46,3 @@ add_grid_mapping = function(gpkg = NULL,
 
 }
 
-
-#' Check if a geopackage and layer exists
-#' This function checks if a layer exists in a geopackage
-#' @param gpkg path to geopackage
-#' @param name name of layer to check
-#' @return logical
-#' @export
-#' @importFrom sf st_layers
-
-layer_exists = function(gpkg, name){
-
-  if(!file.exists(gpkg)){ return(FALSE) }
-
-  if(name %in% st_layers(gpkg)$name){
-    return(TRUE)
-  } else {
-    return(FALSE)
-  }
-}
-

@@ -1,12 +1,12 @@
 #' Generate Forcing Parameters
-#' @description The NextGen forcings workstream team has been working on regridding the GFS meteorological forcings data into NextGen catchments.
+#' @description The NextGen forcing workstream team has been working on regridding the GFS meteorological forcings data into NextGen catchments.
 #' There is a preliminary step that we must take to “downscale” the regridded data into the NextGen catchments based on previous NCAR formulas
 #' that were integrated into the WRFHydro Forcings Engine for the National Water Model (NWM). The following characteristics are needed to downscale GFS data for each NextGen catchment:
 #' Mean elevation (meters); Catchment Latitude centroid; Catchment Longitude Centroid; Mean Catchment Slope (meters/kilometer); Circular mean azimuth (degrees);
 #' Catchment area (km2)
 #' @param gpkg hydrofabric geopackage
 #' @param dem digital elevation model (DEM) SpatRaster to process. Units should be meters
-#' @param add_to_gpkg should table be written to the input gpkg (layer_name = forcing_metadata)
+#' @param verbose emit messages?
 #' @return data.table
 #' @export
 #' @importFrom terra crop project vect crs terrain
@@ -15,16 +15,20 @@
 #' @importFrom sf st_centroid st_coordinates st_drop_geometry
 #' @importFrom hydrofab add_areasqkm
 
-forcing_parameters = function(gpkg, dem, add_to_gpkg = TRUE){
+add_forcing_attributes = function(gpkg, dem, verbose = TRUE){
 
   geom = read_hydrofabric(gpkg, realization = "catchments")[[1]]
 
   DEM_m = crop(dem, project(vect(geom), crs(dem)))
+
   slope_m_km = 1000 * terrain(DEM_m, v = "slope", unit = "radians")
+
   aspect = terrain(DEM_m, v = "aspect", unit = "degree")
 
-  w = weight_grid(DEM_m, geom, ID = "id", progress = FALSE)
+  hyaggregate_log("INFO", "Building Weight Grid", verbose)
+  w = weight_grid(DEM_m, geom, ID = "id", progress = verbose)
 
+  hyaggregate_log("INFO", "Building summaries", verbose)
   summary1 = execute_zonal(c(DEM_m, slope_m_km),
                            w = w,
                            fun = "mean",
@@ -50,11 +54,8 @@ forcing_parameters = function(gpkg, dem, add_to_gpkg = TRUE){
       right_join(left_join(summary1, summary2, by = "id"), by = "id")
   })
 
-  if(add_to_gpkg){
-    write_sf(out, gpkg, "forcing_metadata", overwrite = TRUE)
-  }
 
-  out
+  write_sf(out, gpkg, "forcing_attributes", overwrite = TRUE)
 
-
+  gpkg
 }

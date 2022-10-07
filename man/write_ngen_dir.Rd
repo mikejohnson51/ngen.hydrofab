@@ -19,8 +19,6 @@ write_ngen_dir(
 \item{dir}{directory to write data to, if NULL, then its written at the same level as the gpkg}
 
 \item{catchment_name}{name of catchment layer}
-
-\item{flowpath_name}{name of flowpath layer}
 }
 \description{
 Write NextGen files from GPKG

@@ -15,8 +15,6 @@ write_geojson <- function(x, file) {
 #' @param gpkg path to geopackage
 #' @param dir directory to write data to, if NULL, then its written at the same level as the gpkg
 #' @param catchment_name name of catchment layer
-#' @param flowpath_name name of flowpath layer
-#' @param flowpath_name name of flowpath layer
 #' @return NULL
 #' @export
 #' @importFrom logger log_info log_success
@@ -25,6 +23,8 @@ write_geojson <- function(x, file) {
 #' @importFrom dplyr select mutate left_join group_by arrange ungroup
 #' @importFrom nhdplusTools get_vaa
 #' @importFrom tidyr unnest_longer
+#' @importFrom hydrofab layer_exists
+
 
 write_ngen_dir = function(gpkg,
                           dir = NULL,
@@ -49,7 +49,9 @@ write_ngen_dir = function(gpkg,
     stop("Need ", "flowpath_attributes", " in gpkg", call. = FALSE)
   }
 
-  if(is.null(dir)){ dir = strsplit(gpkg, "\\.")[[1]][1] }
+  if(is.null(dir)){
+    dir = file.path(dirname(gpkg),strsplit(basename(gpkg), "\\.")[[1]][1])
+  }
 
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -101,7 +103,8 @@ write_ngen_dir = function(gpkg,
     hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'flowpath_params.json')}"), verbose)
   }
 
-  if(any(!file.exists(file.path(dir, "crosswalk")), overwrite)){
+  if(any(!file.exists(file.path(dir, "crosswalk")), overwrite) &
+     layer_exists(gpkg,"crosswalk")){
     write.csv(
       read_sf(gpkg, "crosswalk"),
       file.path(dir, "crosswalk.csv"),
@@ -112,7 +115,8 @@ write_ngen_dir = function(gpkg,
   }
 
 
-  if(any(!file.exists(file.path(dir, "aorc_weights")), overwrite)){
+  if(any(!file.exists(file.path(dir, "aorc_weights")), overwrite) &
+     layer_exists(gpkg,"aorc_weights")){
     write.csv(
       read_sf(gpkg, "aorc_weights"),
       file.path(dir, "aorc_weight_grids.csv"),
@@ -122,7 +126,8 @@ write_ngen_dir = function(gpkg,
     hyaggregate_log("SUCCESS", glue("Completed: {file.path(dir, 'aorc_weights.csv')}"), verbose)
   }
 
-  if(any(!file.exists(file.path(dir, "cfe_noahowp_attributes")), overwrite)){
+  if(any(!file.exists(file.path(dir, "cfe_noahowp_attributes")), overwrite) &
+     layer_exists(gpkg,"cfe_noahowp_attributes")){
     write.csv(
       read_sf(gpkg, "cfe_noahowp_attributes"),
       file.path(dir, "cfe_noahowp_attributes.csv"),
@@ -133,7 +138,6 @@ write_ngen_dir = function(gpkg,
   }
 
   if(export_shapefiles){ write_shapefile_dir(gpkg, dir = dir) }
-
 
   return(dir)
 }
