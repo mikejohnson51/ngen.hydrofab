@@ -9,7 +9,7 @@
 #' @param verbose emit messages?
 #' @return data.table
 #' @export
-#' @importFrom terra crop project vect crs terrain
+#' @importFrom terra ext extend xres yres crop project vect crs terrain
 #' @importFrom zonal weight_grid execute_zonal
 #' @importFrom dplyr mutate select right_join left_join
 #' @importFrom sf st_centroid st_coordinates st_drop_geometry
@@ -19,24 +19,31 @@ add_forcing_attributes = function(gpkg, dem, verbose = TRUE){
 
   geom = read_hydrofabric(gpkg, realization = "catchments")[[1]]
 
-  DEM_m = crop(dem, project(vect(geom), crs(dem)))
+  # To ensure accurate slope and aspect calcuations we need a two cell buffer,
+  # not just an "out" snapping
+  dextent = ext(project(vect(geom), crs(dem))) %>%
+    extend(c(2*xres(dem),2*yres(dem)))
+
+  DEM_m = suppressWarnings({
+    crop(dem, dextent, snap = "out")
+  })
 
   slope_m_km = 1000 * terrain(DEM_m, v = "slope", unit = "radians")
 
   aspect = terrain(DEM_m, v = "aspect", unit = "degree")
 
   hyaggregate_log("INFO", "Building Weight Grid", verbose)
-  w = weight_grid(DEM_m, geom, ID = "id", progress = verbose)
+
+  w = weight_grid(DEM_m, geom, "id", verbose)
 
   hyaggregate_log("INFO", "Building summaries", verbose)
+
   summary1 = execute_zonal(c(DEM_m, slope_m_km),
                            w = w,
                            fun = "mean",
                            ID = "id")
 
-
   names(summary1) = c("id", "elevation", "slope_m_km")
-
 
   summary2 = execute_zonal(aspect,
                            w = w,
@@ -53,7 +60,6 @@ add_forcing_attributes = function(gpkg, dem, verbose = TRUE){
       st_drop_geometry( ) %>%
       right_join(left_join(summary1, summary2, by = "id"), by = "id")
   })
-
 
   write_sf(out, gpkg, "forcing_attributes", overwrite = TRUE)
 
