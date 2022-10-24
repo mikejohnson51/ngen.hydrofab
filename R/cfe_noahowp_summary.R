@@ -115,7 +115,8 @@ add_cfe_noahowp_attributes = function(gpkg = NULL,
     crosswalk <- st_drop_geometry(hf$flowpaths)
 
     crosswalk = select(crosswalk, .data$id, .data$member_comid) %>%
-      mutate(comid = strsplit(.data$member_comid, ",")) %>%
+      mutate(comid = strsplit(.data$member_comid, ","),
+             id = gsub("wb-", "cat-", id)) %>%
       unnest_longer(col = c("comid")) %>%
       mutate(comid = as.integer(.data$comid)) %>%
       filter(!duplicated(.))
