@@ -15,7 +15,8 @@ apply_nexus_topology(
   internal_nexus_prefix = "inx-",
   catchment_prefix = "cat-",
   waterbody_prefix = "wb-",
-  verbose = TRUE
+  verbose = TRUE,
+  export_gpkg = NULL
 )
 }
 \arguments{
@@ -31,10 +32,12 @@ apply_nexus_topology(
 
 \item{waterbody_prefix}{character prefix for catchment IDs}
 
+\item{export_gpkg}{file path to write new data. If NULL list object is returned}
+
 \item{network_list}{list containing flowpath and catchment \code{sf} objects}
 }
 \value{
-list
+list or file path
 }
 \description{
 Apply Nexus Topology

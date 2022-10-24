@@ -35,7 +35,8 @@ add_nonnetwork_nexus_location  = function(divides,
 #' @param internal_nexus_prefix character prefix for internal nexus IDs
 #' @param catchment_prefix      character prefix for catchment IDs
 #' @param waterbody_prefix      character prefix for catchment IDs
-#' @return list
+#' @param export_gpkg           file path to write new data. If NULL list object is returned
+#' @return list or file path
 #' @importFrom sf read_sf
 #' @importFrom dplyr select mutate left_join everything distinct
 #' @export
@@ -47,7 +48,8 @@ apply_nexus_topology = function(gpkg,
                                 internal_nexus_prefix = "inx-",
                                 catchment_prefix = "cat-",
                                 waterbody_prefix = "wb-",
-                                verbose = TRUE){
+                                verbose = TRUE,
+                                export_gpkg = NULL){
 
   hyaggregate_log("INFO", "\n--- Applying HY_feature topology ---\n", verbose)
 
@@ -61,11 +63,11 @@ apply_nexus_topology = function(gpkg,
                                   catchment_prefix = catchment_prefix,
                                   waterbody_prefix = waterbody_prefix)
 
-  ngen_flows$catchment_edge_list = add_prefix(topo = ngen_flows$topo ,
-                                              hf_prefix = catchment_prefix,
-                                              nexus_prefix = nexus_prefix,
+  ngen_flows$catchment_edge_list = add_prefix(topo                  = ngen_flows$topo ,
+                                              hf_prefix             = catchment_prefix,
+                                              nexus_prefix          = nexus_prefix,
                                               terminal_nexus_prefix = terminal_nexus_prefix,
-                                              coastal_nexus_prefix = coastal_nexus_prefix,
+                                              coastal_nexus_prefix  = coastal_nexus_prefix,
                                               internal_nexus_prefix = internal_nexus_prefix)
 
   ngen_flows$flowpath_edge_list  = add_prefix(ngen_flows$topo ,
@@ -74,7 +76,6 @@ apply_nexus_topology = function(gpkg,
                                               terminal_nexus_prefix = terminal_nexus_prefix,
                                               coastal_nexus_prefix = coastal_nexus_prefix,
                                               internal_nexus_prefix = internal_nexus_prefix)
-
 
   ngen_flows$topo = NULL
 
@@ -94,55 +95,34 @@ apply_nexus_topology = function(gpkg,
 
   ngen_flows$nexus  =  left_join(ngen_flows$nexus, tmp, by = "poi_id")
 
-  ngen_flows
-
+  if(!is.null(export_gpkg)){
+    write_hydrofabric(ngen_flows, export_gpkg)
+    return(export_gpkg)
+  } else {
+    return(ngen_flows)
+  }
 }
 
 
 #' Merge VPU NextGen files into single CONUS file
 #' @param gpkg a set of geopackage paths
 #' @param outfile a file.path to write to
+#' @param verbose emit messaging?
 #' @return outfile path
 #' @export
 #' @importFrom  sf read_sf write_sf
 #' @importFrom dplyr bind_rows
 
-national_merge = function(gpkg, outfile){
+national_merge = function(gpkg, outfile, verbose = TRUE){
 
-  # catchments
-  lapply(gpkg, read_sf, "divides") %>%
-    bind_rows() %>%
-    write_sf(outfile, "divides")
+  all = st_layers(files[1])$name
 
-  # flowpaths
-  lapply(gpkg, read_sf, "flowpaths") %>%
-    bind_rows() %>%
-    write_sf(outfile, "flowpaths")
-
-   # nexus
-  lapply(gpkg, read_sf, "nexus") %>%
-    bind_rows() %>%
-    write_sf(outfile, "nexus")
-
-  # flowpath_edge_list
-  lapply(gpkg, read_sf, "flowpath_edge_list") %>%
-    bind_rows() %>%
-    write_sf(outfile, "flowpath_edge_list")
-
-  # flowpath_attributes
-  lapply(gpkg, read_sf, "flowpath_attributes") %>%
-    bind_rows() %>%
-    write_sf(outfile, "flowpath_attributes")
-
-  # crosswalk
-  lapply(gpkg, read_sf, "crosswalk") %>%
-    bind_rows() %>%
-    write_sf(outfile, "crosswalk")
-
-  # cfe_noahowp_attributes
-  lapply(gpkg, read_sf, "cfe_noahowp_attributes") %>%
-    bind_rows() %>%
-    write_sf(outfile, "cfe_noahowp_attributes")
+  for(i in 1:length(all)){
+    hyaggregate_log("INFO", glue("Merging: {all[i]}"), verbose)
+    lapply(gpkg, read_sf, all[i]) %>%
+      bind_rows() %>%
+      write_sf(outfile, all[i])
+  }
 
   outfile
 }
@@ -180,7 +160,8 @@ realign_topology = function(network_list,
     left_join(st_drop_geometry(select(iso, id)), by = "id")
 
   # Get all start and end node geometries
-  starts_ends = bind_rows(get_node(iso, "start"), get_node(iso, "end"))
+  starts_ends = bind_rows(get_node(iso, "start"),
+                          get_node(iso, "end"))
 
   # Find the locations where the end points interestect with starting/ending points
   emap     = st_intersects(ends, starts_ends)
@@ -192,11 +173,11 @@ realign_topology = function(network_list,
   # Now, intersect the typed ends with the isolated flow network
   tmap = st_intersects(ends, iso)
 
-  # Build a data.frame that stored the following:
-    # 1. ID - the ID of the end node
-    # 2. type - the type of the end node
-    # 3. touches - the flowlines the end node touches
-    # 4. hs - the hydrosequence of the end node
+  # Build a data.frame that stores the following:
+    # 1. ID           - the ID of the end node
+    # 2. type         - the type of the end node
+    # 3. touches      - the flowlines the end node touches
+    # 4. hs           - the hydrosequence of the end node
     # 5. tocuhes_toID - the toID of the flowline touched by the endnode
 
   # The data.frame is grouped by the ID (1) and the total entries are tabulated.
@@ -243,7 +224,7 @@ realign_topology = function(network_list,
   juns    = filter(df, type == "jun") %>%
     filter(.data$id != .data$touches)
 
-  # The "top" junctions are those that do no touches IDs in tmp1
+  # The "top" junctions are those that do not touches IDs in tmp1
   # AND that have the largest hydrosequnece
   # Here we shift the toID to the flowline it touches.
 
@@ -265,15 +246,28 @@ realign_topology = function(network_list,
     distinct() %>%
     mutate(type = "junction")
 
+
+
   # The complete nexus topo network is the combination of the first set,
   # The top junctions and the inner junctions
   # Collectively, these define the fl --> nex network topology
   topo = bind_rows(tmp1, top_juns, inner_juns)  %>%
     mutate(topo_type = "network")
 
+  ## NEW!!! ##
+    xx =  select(topo, toid, type) %>%
+      group_by(toid) %>%
+      mutate(type = ifelse(any(type == 'terminal'), "terminal", type)) %>%
+      slice(1) %>%
+      ungroup()
+
+    topo = topo %>%
+      mutate(type = NULL) %>%
+      left_join(xx, by = "toid")
+
   # We'll use the fl-->nex topo to modify the input flow network toIDs
   # Additionally we will add the Nextgen required prefixes.
-  fl =  left_join(select(network_list$flowpaths, -.data$toid),topo, by = "id")  %>%
+  fl =  left_join(select(network_list$flowpaths, -.data$toid), topo, by = "id")  %>%
     st_as_sf() %>%
     rename_geometry('geometry') %>%
     mutate(id = paste0(waterbody_prefix, id),
@@ -281,12 +275,12 @@ realign_topology = function(network_list,
            realized_catchment = gsub(waterbody_prefix, catchment_prefix, id)) %>%
     rename(main_id = levelpathid)
 
-
   divide =  left_join(select(network_list$catchments, -.data$toid),
-                      select(topo, -type), by = "id")  %>%
+                      select(topo, id, toid, net_type = type), by = "id")  %>%
     st_as_sf() %>%
     rename_geometry('geometry') %>%
-    mutate(toid = ifelse(type %in% c("coastal", "internal"), id, toid)) %>%
+    mutate(toid = ifelse(type %in% c("coastal", "internal"), id, toid),
+           type = ifelse(net_type == "terminal", "terminal", type)) %>%
     mutate(nex_pre = case_when(
       type == "terminal" ~ terminal_nexus_prefix,
       type == "coastal"  ~ coastal_nexus_prefix,
@@ -340,6 +334,13 @@ realign_topology = function(network_list,
           distinct()
   })
 
+
+  ### CHECK
+  if(!any(all(nex$id %in% fl$toid),
+  length(unique(fl$id)) == nrow(fl),
+  length(unique(divide$id)) == nrow(divide))){
+   stop("conditions violated!!!")
+  }
 
   return(list(flowpaths = select(fl, -type, -topo_type),
               divides   = divide,

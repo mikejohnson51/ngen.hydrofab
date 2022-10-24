@@ -4,12 +4,14 @@
 \alias{national_merge}
 \title{Merge VPU NextGen files into single CONUS file}
 \usage{
-national_merge(gpkg, outfile)
+national_merge(gpkg, outfile, verbose = TRUE)
 }
 \arguments{
 \item{gpkg}{a set of geopackage paths}
 
 \item{outfile}{a file.path to write to}
+
+\item{verbose}{emit messaging?}
 }
 \value{
 outfile path
