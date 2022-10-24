@@ -151,7 +151,8 @@ realign_topology = function(network_list,
                             waterbody_prefix = NULL){
 
   # Isolate the flow network
-  iso = select(network_list$flowpaths, id, toid, hydroseq, poi_id)
+  iso = select(network_list$flowpaths,
+               id, toid, hydroseq, poi_id)
 
   # Cast flow network to end nodes
   ends = iso  %>%
@@ -246,8 +247,6 @@ realign_topology = function(network_list,
     distinct() %>%
     mutate(type = "junction")
 
-
-
   # The complete nexus topo network is the combination of the first set,
   # The top junctions and the inner junctions
   # Collectively, these define the fl --> nex network topology
@@ -275,6 +274,8 @@ realign_topology = function(network_list,
            realized_catchment = gsub(waterbody_prefix, catchment_prefix, id)) %>%
     rename(main_id = levelpathid)
 
+
+
   divide =  left_join(select(network_list$catchments, -.data$toid),
                       select(topo, id, toid, net_type = type), by = "id")  %>%
     st_as_sf() %>%
@@ -299,6 +300,9 @@ realign_topology = function(network_list,
   # all nexus and terminal, coastal and inland divides
 
   nex = filter(fl, type %in% c("nexus",  "terminal")) %>%
+    group_by(toid) %>%
+    slice_max(hydroseq) %>%
+    ungroup() %>%
     mutate(geometry = get_node(., "end")$geometry,
            id = toid) %>%
     select(id, toid, poi_id, type) %>%
@@ -313,7 +317,7 @@ realign_topology = function(network_list,
     mutate(id = paste0(nex_pre, id),
            toid = paste0(waterbody_prefix, toid),
            nex_pre = NULL) %>%
-    mutate(toid = ifelse(type == "terminal", paste0(waterbody_prefix, 0), toid )) %>%
+    mutate(toid = ifelse(type == "terminal", paste0(waterbody_prefix, 0), toid)) %>%
     bind_rows(
       add_nonnetwork_nexus_location(
         divide,
