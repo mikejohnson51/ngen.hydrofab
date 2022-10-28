@@ -63,40 +63,46 @@ apply_nexus_topology = function(gpkg,
                                   catchment_prefix = catchment_prefix,
                                   waterbody_prefix = waterbody_prefix)
 
-  ngen_flows$catchment_edge_list = add_prefix(topo                  = ngen_flows$topo ,
-                                              hf_prefix             = catchment_prefix,
-                                              nexus_prefix          = nexus_prefix,
-                                              terminal_nexus_prefix = terminal_nexus_prefix,
-                                              coastal_nexus_prefix  = coastal_nexus_prefix,
-                                              internal_nexus_prefix = internal_nexus_prefix)
+  ngen_flows$flowpaths = ngen_flows$flowpaths %>%
+    select(id, toid, mainstem = main_id, lengthkm, areasqkm,
+           tot_drainage_areasqkm, order, hydroseq, divide_id = realized_catchment)
 
-  ngen_flows$flowpath_edge_list  = add_prefix(ngen_flows$topo ,
-                                              hf_prefix = waterbody_prefix,
-                                              nexus_prefix = nexus_prefix,
-                                              terminal_nexus_prefix = terminal_nexus_prefix,
-                                              coastal_nexus_prefix = coastal_nexus_prefix,
-                                              internal_nexus_prefix = internal_nexus_prefix)
+  ngen_flows$divides = ngen_flows$divides %>%
+    select(divide_id = id, toid, divide_type = type, areasqkm) %>%
+    left_join(st_drop_geometry(select(ngen_flows$flowpaths, id,divide_id)))
+
+  ngen_flows$POIs = read_sf(gpkg, "mapped_POIs") %>%
+    select(poi_id) %>%
+    inner_join(st_drop_geometry(select(ngen_flows$nexus, id, poi_id)), by = "poi_id") %>%
+    rename_geometry("geometry")
+
+  ngen_flows$network = add_prefix(ngen_flows$topo ,
+                                   hf_prefix = waterbody_prefix,
+                                   nexus_prefix = nexus_prefix,
+                                   terminal_nexus_prefix = terminal_nexus_prefix,
+                                   coastal_nexus_prefix = coastal_nexus_prefix,
+                                   internal_nexus_prefix = internal_nexus_prefix) %>%
+    left_join(st_drop_geometry(select(ngen_flows$flowpaths, id, divide_id, lengthkm, areasqkm, tot_drainage_areasqkm, mainstem)), by = "id") %>%
+    left_join(st_drop_geometry(select(ngen_flows$POIs, toid = id, poi_id)), by = "toid")
 
   ngen_flows$topo = NULL
 
   ngen_flows$lookup_table = read_sf(gpkg, "lookup_table") %>%
     select(id = aggregated_flowpath_ID,
-           NHDPlusV2_COMID, NHDPlusV2_COMID_part,
-           reconciled_ID, mainstem,
-           POI_ID, POI_TYPE, POI_VALUE) %>%
-    mutate(id = paste0(waterbody_prefix, id)) %>%
-    left_join(ngen_flows$flowpath_edge_list, by = "id") %>%
+           hf_id = NHDPlusV2_COMID,
+           hf_id_part = NHDPlusV2_COMID_part,
+           mainstem,
+           poi_id = POI_ID,
+           poi_type = POI_TYPE,
+           poi_value = POI_VALUE) %>%
+    mutate(hf_source = "NHDPlusV2_COMID",
+      id = paste0(waterbody_prefix, id)) %>%
+    left_join(select(ngen_flows$network, id, toid, divide_id), by = "id") %>%
     select(id, toid, everything()) %>%
-    distinct() %>%
-    mutate(type = NULL)
-
-  tmp = select(ngen_flows$lookup_table, poi_id = POI_ID, poi_type = POI_TYPE, poi_value = POI_VALUE) %>%
-    filter(!is.na(poi_id))
-
-  ngen_flows$nexus  =  left_join(ngen_flows$nexus, tmp, by = "poi_id")
+    distinct()
 
   if(!is.null(export_gpkg)){
-    write_hydrofabric(ngen_flows, export_gpkg)
+    write_hydrofabric(ngen_flows, export_gpkg, enforce_dm = TRUE)
     return(export_gpkg)
   } else {
     return(ngen_flows)
@@ -154,7 +160,7 @@ realign_topology = function(network_list,
   iso = select(network_list$flowpaths,
                id, toid, hydroseq, poi_id)
 
-  # Cast flow network to end nodes
+  # Cast flow network to end nodes, these are the outlets of the
   ends = iso  %>%
     rename_geometry('geometry') %>%
     mutate(geometry = get_node(., "end")$geometry) %>%
@@ -164,7 +170,7 @@ realign_topology = function(network_list,
   starts_ends = bind_rows(get_node(iso, "start"),
                           get_node(iso, "end"))
 
-  # Find the locations where the end points interestect with starting/ending points
+  # Find the locations where the end points intersect with starting/ending points
   emap     = st_intersects(ends, starts_ends)
 
   # If more then one intersection occurs its a nexus,
@@ -204,7 +210,7 @@ realign_topology = function(network_list,
     mutate(type = "terminal")
 
   ### --- NEXUS 1 --- ###
-  # easy nexuses are those typed as nex where the id and touches ID are not equal
+  # nexuses are those typed as nex where the id and touches ID are not equal
   # ID/toID topology persists
 
   nexus    = filter(df, type == "nex") %>%
@@ -214,23 +220,23 @@ realign_topology = function(network_list,
     mutate(type = "nexus")
 
   # Terminals and easy nexuses make the first set of nexus locations
-  tmp1 = bind_rows(terminals, nexus)
+  term_nex = bind_rows(terminals, nexus)
 
   ### --- Junctions --- ###
   # When flowlines have junctions involved (e.g. more then one incoming flowline)
-  # We need to ensure the most Upstream is selected as the nexus AND
-  # That the others are topologically pushed downstream
+  # we need to ensure the most upstream is selected as the nexus AND
+  # that the others are topologically pushed downstream
 
   # First, all junctions are found
   juns    = filter(df, type == "jun") %>%
     filter(.data$id != .data$touches)
 
-  # The "top" junctions are those that do not touches IDs in tmp1
+  # The "top" junctions are those that do not touch any IDs in tmp1
   # AND that have the largest hydrosequnece
   # Here we shift the toID to the flowline it touches.
 
   top_juns = juns %>%
-    filter(!touches %in% c(tmp1$toid)) %>%
+    filter(!touches %in% c(term_nex$toid)) %>%
     group_by(touches) %>%
     slice_max(hs) %>%
     ungroup() %>%
@@ -250,7 +256,7 @@ realign_topology = function(network_list,
   # The complete nexus topo network is the combination of the first set,
   # The top junctions and the inner junctions
   # Collectively, these define the fl --> nex network topology
-  topo = bind_rows(tmp1, top_juns, inner_juns)  %>%
+  topo = bind_rows(term_nex, top_juns, inner_juns)  %>%
     mutate(topo_type = "network")
 
   ## NEW!!! ##
@@ -262,7 +268,8 @@ realign_topology = function(network_list,
 
     topo = topo %>%
       mutate(type = NULL) %>%
-      left_join(xx, by = "toid")
+      left_join(xx, by = "toid") %>%
+      filter(id != toid)
 
   # We'll use the fl-->nex topo to modify the input flow network toIDs
   # Additionally we will add the Nextgen required prefixes.
@@ -274,13 +281,11 @@ realign_topology = function(network_list,
            realized_catchment = gsub(waterbody_prefix, catchment_prefix, id)) %>%
     rename(main_id = levelpathid)
 
-
-
-  divide =  left_join(select(network_list$catchments, -.data$toid),
-                      select(topo, id, toid, net_type = type), by = "id")  %>%
+  divide =  left_join(select(network_list$catchments, -.data$toid), select(topo, id, toid, net_type = type), by = "id")  %>%
     st_as_sf() %>%
     rename_geometry('geometry') %>%
     mutate(toid = ifelse(type %in% c("coastal", "internal"), id, toid),
+           net_type = ifelse(is.na(net_type), type, net_type),
            type = ifelse(net_type == "terminal", "terminal", type)) %>%
     mutate(nex_pre = case_when(
       type == "terminal" ~ terminal_nexus_prefix,
@@ -339,12 +344,22 @@ realign_topology = function(network_list,
   })
 
 
-  ### CHECK
-  if(!any(all(nex$id %in% fl$toid),
-  length(unique(fl$id)) == nrow(fl),
-  length(unique(divide$id)) == nrow(divide))){
-   stop("conditions violated!!!")
+  if(sum(!divide$toid %in% nex$id) != 0){
+    stop('Divides flow to nexus locations that do not exisit!')
   }
+
+  if(sum(!fl$toid %in% nex$id) != 0 ){
+    stop('Flowpaths flow to nexus locations that do not exisit!')
+  }
+
+  if(sum(duplicated(divide$id)) != 0 ){
+    stop('Divides have duplicated IDs!!')
+  }
+
+  if(sum(duplicated(fl$id)) != 0 ){
+    stop('Divides flow to nexus locations that do not exisit!')
+  }
+
 
   return(list(flowpaths = select(fl, -type, -topo_type),
               divides   = divide,
