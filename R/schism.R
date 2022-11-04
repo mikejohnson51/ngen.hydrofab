@@ -29,7 +29,7 @@ interpolate_schism = function(AOI, schism = gpkg, outfile = NULL, algo = "invdis
 
     g = glue("gdal_grid -a {algo} -clipsrc {bb$xmin} {bb$ymin} {bb$xmax} {bb$ymax} -txe {bb$xmin} {bb$xmax} -tye {bb$ymin} {bb$ymax} -tr {res[1]} {res[1]} -of GTiff -ot Float64 -l {meta$name} -zfield Z {schism} {outfile}")
 
-  } else if(grepl("fgb", schism){
+  } else if(grepl("fgb", schism)){
 
     bb   = st_bbox(AOI)
     g = glue("gdal_grid -a {algo} -clipsrc {bb$xmin} {bb$ymin} {bb$xmax} {bb$ymax} -txe {bb$xmin} {bb$xmax} -tye {bb$ymin} {bb$ymax} -tr {res[1]} {res[1]} -of GTiff -ot Float64 -zfield Z {schism} {outfile}")
@@ -76,4 +76,4 @@ interpolate_schism = function(AOI, schism = gpkg, outfile = NULL, algo = "invdis
   system(g)
   return(outfile)
 
-  }
+}
