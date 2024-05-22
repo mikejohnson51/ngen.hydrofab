@@ -36,6 +36,7 @@ add_nonnetwork_nexus_location  = function(divides,
 #' @param internal_nexus_prefix character prefix for internal nexus IDs
 #' @param catchment_prefix      character prefix for catchment IDs
 #' @param waterbody_prefix      character prefix for catchment IDs
+#' @param enforce_dm            should the data model be validated prior to writing?
 #' @param export_gpkg           file path to write new data. If NULL list object is returned
 #' @return list or file path
 #' @importFrom sf read_sf st_point_on_surface
@@ -51,6 +52,7 @@ apply_nexus_topology = function(gpkg,
                                 catchment_prefix = "cat-",
                                 waterbody_prefix = "wb-",
                                 verbose = TRUE,
+                                enforce_dm = FALSE,
                                 export_gpkg = NULL){
 
   hyaggregate_log("INFO", "\n--- Applying HY_feature topology ---\n", verbose)
@@ -176,7 +178,7 @@ apply_nexus_topology = function(gpkg,
   }
 
   if(!is.null(export_gpkg)){
-    write_hydrofabric(ngen_flows, export_gpkg, enforce_dm = TRUE)
+    write_hydrofabric(ngen_flows, export_gpkg, enforce_dm = enforce_dm)
     return(export_gpkg)
   } else {
     return(ngen_flows)

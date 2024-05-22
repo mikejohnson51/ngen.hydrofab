@@ -17,6 +17,7 @@ apply_nexus_topology(
   catchment_prefix = "cat-",
   waterbody_prefix = "wb-",
   verbose = TRUE,
+  enforce_dm = FALSE,
   export_gpkg = NULL
 )
 }
@@ -32,6 +33,8 @@ apply_nexus_topology(
 \item{catchment_prefix}{character prefix for catchment IDs}
 
 \item{waterbody_prefix}{character prefix for catchment IDs}
+
+\item{enforce_dm}{should the data model be validated prior to writing?}
 
 \item{export_gpkg}{file path to write new data. If NULL list object is returned}
 
