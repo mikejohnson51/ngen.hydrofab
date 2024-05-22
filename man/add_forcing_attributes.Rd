@@ -4,7 +4,7 @@
 \alias{add_forcing_attributes}
 \title{Generate Forcing Parameters}
 \usage{
-add_forcing_attributes(gpkg, dem, verbose = TRUE)
+add_forcing_attributes(gpkg, export_gpkg, add_grid = NULL, dem, verbose = TRUE)
 }
 \arguments{
 \item{gpkg}{hydrofabric geopackage}

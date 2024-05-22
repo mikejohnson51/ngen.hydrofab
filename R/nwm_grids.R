@@ -44,7 +44,7 @@ check_nco = function(){
 #' @importFrom httr GET write_disk progress
 #' @export
 
-get_nwm_grids   =  function(dir = NULL, spatial = FALSE, download_cache = TRUE){
+get_nwm_grids   =  function(dir = NULL, spatial = FALSE, download_cache = FALSE){
 
 if (is.null(dir)) {
   stop("`dir` cannot be NULL", call. = FALSE)
@@ -85,31 +85,48 @@ if(!file.exists(outfile) & download_cache){
   # Push 3 into 2
   system(paste("ncks -A", local_files[3], local_files[2]))
   # Push 2 into 1
-  system(paste("ncks -A", local_files[2], local_files[1]))
+  system(paste("ncks -A", local_files[3], local_files[1]))
 
   log_info("Merged all data into 1 file with a size of ",
            round(file.size(local_files[1]) / 1e9, 2), " GB"
   )
 
-  # Copy 1 to final
+  rast(local_files[1])  %>% names()
+  rast(local_files[2]) %>% names()
+  rast(local_files[3]) %>% names()
 
-  file.rename(local_files[1], outfile)
 
-  # Remove files
-  unlink(local_files, recursive = TRUE)
+(r = sds(local_files[c(1,3)]) %>% rast())
+
 
   # Extact subsets from final
   varnames  = c(
-    # soild properties
+    # soil properties
     'bexp', "dksat", "psisat", "slope", "smcmax",
-    "smcwlt", "refkdt", 'cwpvt', 'vcmx25', 'mp', 'mfsno',
+    "smcwlt", "refkdt", 'cwpvt', 'vcmx25', 'mp', 'mfsno', 'quartz',
     # wrfinput
     "IVGTYP", "ISLTYP",
     # GW
     "Area_sqkm", "ComID", "Coeff",  "Zmax", "Expon"
   )
 
-  system(paste("ncks -C -O -v",  paste(varnames, collapse = ","), outfile, outfile))
+
+  system(paste("ncks -C -O -v",  paste(varnames, collapse = ","), local_files[1], outfile))
+
+  log_info("Extracted ", length(varnames), " varibles. New file size ",
+           round(file.size(outfile) / 1e9, 2), " GB")
+  r = sds(local_files[1])
+
+  xx = which(grepl(paste(varnames, collapse = "|"), names(r)))
+  r2 = r[[xx]]
+
+  writeCDF(r2,
+           outfile,
+           overwrite = TRUE)
+
+  rast(outfile)
+  # Remove files
+  unlink(local_files, recursive = TRUE)
 
   log_info("Extracted ", length(varnames), " varibles. New file size ",
            round(file.size(outfile) / 1e9, 2), " GB")
@@ -145,7 +162,7 @@ correct_nwm_spatial = function(path, lyrs = NULL){
   )
 
 
-  data = suppressWarnings({ rast(path, lyrs = lyrs) })
+  data = invisible(suppressWarnings({ rast(path, lyrs = lyrs) }))
   terra::ext(data) <-  template$ext
   terra::crs(data) <-  template$crs
 

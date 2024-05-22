@@ -65,10 +65,10 @@ get_routelink_path = function(dir = ngen_data_dir(), build = TRUE){
         mutate(link = as.numeric(link)) %>%
         right_join(df, by = "link")  %>%
         rename(comid = link) %>%
-        mutate(gages = trimws(.data$gages),
-               gages = ifelse(.data$gages == "", NA, .data$gages),
+        mutate(gages = trimws(gages),
+               gages = ifelse(gages == "", NA, gages),
                NHDWaterbodyComID = ifelse(NHDWaterbodyComID == -9999, NA, NHDWaterbodyComID),
-               NHDWaterbodyComID = as.numeric(.data$NHDWaterbodyComID))
+               NHDWaterbodyComID = as.numeric(NHDWaterbodyComID))
 
       logger::log_info("Converting NetCDF to fst")
       fst::write.fst(df,  local_fst)
@@ -125,9 +125,9 @@ get_routelink = function(atts = NULL, path = get_routelink_path(), build = TRUE)
 
 build_length_map = function (flowpaths, length_table) {
 
-  select(st_drop_geometry(flowpaths), .data$id, comid = .data$member_comid) %>%
-    mutate(comid = strsplit(.data$comid, ",")) %>%
-    unnest(cols = .data$comid) %>%
+  select(st_drop_geometry(flowpaths), id, comid = member_comid) %>%
+    mutate(comid = strsplit(comid, ",")) %>%
+    unnest(cols = comid) %>%
     mutate(comid = as.numeric(gsub("\\..*","", comid))) %>%
     left_join(length_table, by = "comid") %>%
     group_by(id) %>%
@@ -158,7 +158,7 @@ add_slope = function(flowpaths) {
     # NHDplusFlowlineVAA table the units must be divided by 1000 (m/km)
     mutate(slope = slope / 1000) %>%
     group_by(id) %>%
-    summarize(slope = round(weighted.mean(.data$slope, w = .data$perLength, na.rm = TRUE), 10)) %>%
+    summarize(slope = round(weighted.mean(slope, w = perLength, na.rm = TRUE), 10)) %>%
     right_join(flowpaths, by = "id") %>%
     st_as_sf()
   })
@@ -179,44 +179,49 @@ add_slope = function(flowpaths) {
 #' @importFrom tidyr unnest
 #' @importFrom RNetCDF open.nc close.nc var.get.nc
 
+
 add_flowpath_attributes   = function (gpkg,
                                      rl_vars = c("comid", "Qi", "MusK", "MusX", "n", "So", "ChSlp", "BtmWdth",
                                                  "time", "Kchan", "nCC", "TopWdthCC", "TopWdth"),
                                      rl_path = get_routelink_path()) {
 
+  net = read_sf(gpkg, "network")
 
+  length_table = get_vaa("lengthkm")
 
-
-  flowpaths = read_sf(gpkg, "flowpaths") %>%
-    #add_slope(flowpaths) %>%
-    mutate(length_m = as.numeric(st_length(.)))
-
-  net_map =  build_length_map(flowpaths, length_table = suppressMessages({
-    get_vaa(c("lengthkm"),  updated_network = TRUE)}))
+  net_map = net %>%
+    select(id, comid = hf_id ) %>%
+    filter(complete.cases(.)) %>%
+    left_join(length_table, by = "comid") %>%
+    group_by(id) %>%
+    mutate(totLength = sum(lengthkm),
+           perLength = round(lengthkm / totLength, 3),
+           totLength = NULL,
+           lengthkm = NULL) %>%
+    ungroup()
 
   if (!"Length" %in% rl_vars) { rl_vars = c("Length", rl_vars) }
 
-  df = get_routelink(atts = rl_vars, path = rl_path)
-
-  df = df %>%
+  df = get_routelink(atts = rl_vars, path = rl_path) %>%
     right_join(net_map, by = "comid") %>%
-    group_by(.data$id) %>%
+    group_by(id) %>%
     summarize(across(everything(), ~ round(
-      weighted.mean(x = .,
-                    w = .data$perLength, na.rm = TRUE), 8))) %>%
-    select(-.data$comid, -.data$Length, -.data$perLength) %>%
-    left_join(select(st_drop_geometry(flowpaths), id, length_m), by = 'id')
+      weighted.mean(x = ., w = perLength, na.rm = TRUE), 8))) %>%
+    select(-comid, -Length, -perLength) %>%
+    left_join(select(net, id, lengthkm), by = 'id') %>%
+    mutate(length_m = lengthkm * 1000, lengthkm = NULL) %>%
+    distinct()
 
   df2 = get_routelink(c("comid", "gages", "NHDWaterbodyComID"), path = rl_path) %>%
     right_join(net_map, by = 'comid') %>%
-    group_by(.data$id) %>%
-    summarize(rl_gages = paste(.data$gages[!is.na(.data$gages)], collapse = ","),
-              rl_NHDWaterbodyComID = paste(unique(.data$NHDWaterbodyComID[!is.na(.data$NHDWaterbodyComID)]), collapse = ",")) %>%
+    group_by(id) %>%
+    summarize(rl_gages = paste(gages[!is.na(gages)], collapse = ","),
+              rl_NHDWaterbodyComID = paste(unique(NHDWaterbodyComID[!is.na(NHDWaterbodyComID)]), collapse = ",")) %>%
     left_join(df, by = "id") %>%
-    mutate(rl_gages = ifelse(.data$rl_gages == "", NA, .data$rl_gages),
-           rl_NHDWaterbodyComID = ifelse(.data$rl_NHDWaterbodyComID == "", NA, .data$rl_NHDWaterbodyComID)) %>%
-    mutate(rl_gages = as.character(.data$rl_gages),
-           rl_NHDWaterbodyComID = as.character(.data$rl_NHDWaterbodyComID))
+    mutate(rl_gages = ifelse(rl_gages == "", NA, rl_gages),
+           rl_NHDWaterbodyComID = ifelse(rl_NHDWaterbodyComID == "", NA, rl_NHDWaterbodyComID)) %>%
+    mutate(rl_gages = as.character(rl_gages),
+           rl_NHDWaterbodyComID = as.character(rl_NHDWaterbodyComID))
 
   write_sf(df2, gpkg, "flowpath_attributes")
 

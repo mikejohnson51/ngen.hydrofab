@@ -4,7 +4,7 @@
 \alias{get_nwm_grids}
 \title{Get NWM hydrologcic grids}
 \usage{
-get_nwm_grids(dir = NULL, spatial = FALSE, download_cache = TRUE)
+get_nwm_grids(dir = NULL, spatial = FALSE, download_cache = FALSE)
 }
 \arguments{
 \item{dir}{directory where file should exist}

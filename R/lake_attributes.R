@@ -14,6 +14,8 @@ add_lake_attributes  = function(gpkg,
                                          "WeirC", "WeirE", "WeirL"),
                            lake_path = NULL){
 
+  if(layer_exists(gpkg, "hydrolocations")){
+
   if(is.null(lake_path)){
     stop("lake_path cannot be NULL")
   }
@@ -28,12 +30,21 @@ add_lake_attributes  = function(gpkg,
 
   names(out) = all
 
-  read_sf(gpkg, "lookup_table") %>%
-    filter(POI_TYPE %in% c("WBIn", 'WBOut')) %>%
-    mutate(POI_VALUE = as.numeric(POI_VALUE)) %>%
-    left_join(out, by = c("POI_VALUE" = "lake_id")) %>%
-    select(id, toid, lake_vars) %>%
-    write_sf(gpkg, "lake_attributes")
+  net = read_sf(gpkg, "network") %>%
+    select(id, toid) %>%
+    distinct()
+
+    read_sf(gpkg, "hydrolocations") %>%
+      filter(hl_reference %in% c("WBIn", 'WBOut')) %>%
+      mutate(hl_link = as.numeric(hl_link)) %>%
+      left_join(out, by = c("hl_link" = "lake_id")) %>%
+      left_join(net, by = "id") %>%
+      select(id, toid, hl_id, hl_reference, hl_link, hl_uri, all_of(lake_vars)) %>%
+      write_sf(gpkg, "lakes")
+
+  } else {
+    message("Can only write LAKES when hydrolocation layer exisits in gpkg.")
+  }
 
   gpkg
 

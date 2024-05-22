@@ -6,22 +6,17 @@
 \usage{
 add_cfe_noahowp_attributes(
   gpkg = NULL,
-  dir = NULL,
+  nwm_dir = NULL,
   catchment_name = NULL,
   flowline_name = NULL,
-  ID = "id",
   precision = 9,
-  add_weights_to_gpkg = TRUE,
-  add_to_gpkg = TRUE,
-  overwrite = FALSE,
+  outfile = NULL,
   verbose = TRUE,
   log = TRUE
 )
 }
 \arguments{
 \item{gpkg}{a geopackage with aggregation units}
-
-\item{dir}{directory of expected nwm_grid_file (see hyAggregate::get_nwm_grids())}
 
 \item{catchment_name}{the layer name of the aggregation units}
 
@@ -30,6 +25,8 @@ add_cfe_noahowp_attributes(
 \item{precision}{the precision of the computations}
 
 \item{single_layer}{should only the top layer of a multilayer parameter be processed?}
+
+\item{dir}{directory of expected nwm_grid_file (see hyAggregate::get_nwm_grids())}
 }
 \description{
 Add CFE and NOAH-OWP attributes

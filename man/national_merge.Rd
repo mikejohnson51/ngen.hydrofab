@@ -4,7 +4,13 @@
 \alias{national_merge}
 \title{Merge VPU NextGen files into single CONUS file}
 \usage{
-national_merge(gpkg, outfile, verbose = TRUE)
+national_merge(
+  gpkg,
+  outfile,
+  layers = c("hydrolocations", "nexus", "flowpaths", "divides", "network",
+    "flowpath_attributes"),
+  verbose = TRUE
+)
 }
 \arguments{
 \item{gpkg}{a set of geopackage paths}

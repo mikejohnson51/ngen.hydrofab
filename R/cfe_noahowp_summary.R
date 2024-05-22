@@ -18,14 +18,11 @@
 #' @importFrom hydrofab read_hydrofabric hyaggregate_log
 
 add_cfe_noahowp_attributes = function(gpkg = NULL,
-                                 dir = NULL,
+                                 nwm_dir = NULL,
                                  catchment_name = NULL,
                                  flowline_name  = NULL,
-                                 ID = "id",
                                  precision = 9,
-                                 add_weights_to_gpkg = TRUE,
-                                 add_to_gpkg = TRUE,
-                                 overwrite = FALSE,
+                                 outfile = NULL,
                                  verbose = TRUE,
                                  log = TRUE) {
 
@@ -37,10 +34,9 @@ add_cfe_noahowp_attributes = function(gpkg = NULL,
     verbose = log
   }
 
-  if(is.null(dir)){
-    stop("dir cannot be NULL")
+  if(is.null(nwm_dir)){
+    stop("nwm_dir cannot be NULL")
   }
-
 
   lyr = "cfe_noahowp_attributes"
 
@@ -50,78 +46,76 @@ add_cfe_noahowp_attributes = function(gpkg = NULL,
     stop('gpkg cannot be missing', call. = FALSE)
   }
 
-  if(!overwrite){
-   if(lyr %in% st_layers(gpkg)$name){
-     return(gpkg)
-   }
-  }
-
   hf = read_hydrofabric(gpkg, catchment_name, flowline_name)
 
   hyaggregate_log("INFO", "Getting NWM grid data", verbose)
 
-  data = get_nwm_grids(dir = dir, spatial = TRUE)
+  f = list.files(nwm_dir, full.names = TRUE)
+  soils = correct_nwm_spatial(grep('soilproperties_CONUS_FullRouting', f, value = TRUE))
+  wrf = correct_nwm_spatial(grep('wrfinput_CONUS', f, value = T))
 
-  hyaggregate_log("INFO", glue("Building weighting grid from: {terra::sources(data)[1]}"),  verbose)
+  hyaggregate_log("INFO", glue("Building weighting grid from: {terra::sources(soils)[1]}"),  verbose)
 
-  nwm_w_1000m = weight_grid(data, hf$catchments,  ID = ID, progress = FALSE)
-
-  if(add_weights_to_gpkg){ write_sf(nwm_w_1000m, gpkg, "nwm1km_weights") }
+  nwm_w_1000m = weight_grid(soils, hf$catchments,  ID = "divide_id", progress = FALSE)
 
   soils_exe = list()
 
   ### soil_properties
-  soil_mode_var = c("bexp", "IVGTYP", "ISLTYP")
+  soil_mode_var = c("bexp")
+  wrf_mode_var = c("IVGTYP", "ISLTYP")
   soil_gm_var   = c("dksat", "psisat")
-  soil_mean_var = c("slope", "smcmax", "smcwlt", "refkdt", 'cwpvt', 'vcmx25', 'mp', 'mfsno')
+  soil_mean_var = c("slope", "smcmax", "smcwlt", "refkdt", 'cwpvt', 'vcmx25', 'mp', 'mfsno', "quartz")
 
-  soils_exe[[1]] = zonal::execute_zonal(
-    data = data,
+  soils_exe[[1]] = execute_zonal(
+    data = soils[[grepl(paste(soil_mode_var, collapse = "|"), names(soils))]],
     w = nwm_w_1000m,
-    ID = ID,
-    subds = grepl(paste0(soil_mode_var, collapse = "|"), names(data)),
+    ID = 'divide_id',
     fun = "mode"
   )
 
   hyaggregate_log("INFO", glue('Getting mode: {paste(soil_mode_var, collapse = ", ")}'),  verbose)
 
   soils_exe[[2]] = execute_zonal(
-    data = data,
+    data = wrf[[grepl(paste(wrf_mode_var, collapse = "|"), names(wrf))]],
     w = nwm_w_1000m,
-    ID = ID,
-    drop = ID,
-    subds = grepl(paste0(soil_gm_var, collapse = "|"), names(data)),
+    ID = 'divide_id',
+    drop = 'divide_id',
+    fun = "mode"
+  )
+
+  hyaggregate_log("INFO", glue('Getting mode: {paste(wrf_mode_var, collapse = ", ")}'),  verbose)
+
+  soils_exe[[3]] = execute_zonal(
+    data = soils[[grepl(paste(soil_gm_var, collapse = "|"), names(soils))]],
+    w = nwm_w_1000m,
+    ID = 'divide_id',
+    drop = 'divide_id',
     fun = zonal:::geometric_mean
   )
 
   hyaggregate_log("INFO", glue('Getting geometric_mean: {paste(soil_gm_var, collapse = ", ")}'),  verbose)
 
-  soils_exe[[3]] = execute_zonal(
-    data = data,
+  soils_exe[[4]] = execute_zonal(
+    data = soils[[grepl(paste(soil_mean_var, collapse = "|"), names(soils))]],
     w = nwm_w_1000m,
-    ID = ID,
-    drop = ID,
-    subds = grepl(paste0(soil_mean_var, collapse = "|"), names(data)),
+    ID = 'divide_id',
+    drop = 'divide_id',
     fun = "mean"
   )
 
   hyaggregate_log("INFO", glue('Getting mean: {paste(soil_mean_var, collapse = ", ")}'),  verbose)
 
-  exe <- cbind(soils_exe[[1]], soils_exe[[2]], soils_exe[[3]])
-
+  exe <-  do.call('cbind', soils_exe)
+  names(exe) = gsub("_Time=1", "", names(exe))
 
   ####
 
-    crosswalk <- st_drop_geometry(hf$flowpaths)
+    crosswalk = read_sf(gpkg, "network") %>%
+      select(divide_id, comid  = hf_id) %>%
+      distinct() %>%
+      filter(complete.cases(.))
 
-    crosswalk = select(crosswalk, .data$id, .data$member_comid) %>%
-      mutate(comid = strsplit(.data$member_comid, ","),
-             id = gsub("wb-", "cat-", id)) %>%
-      unnest_longer(col = c("comid")) %>%
-      mutate(comid = as.integer(.data$comid)) %>%
-      filter(!duplicated(.))
-
-    gwnc = open.nc(get_nwm_grids(dir, spatial = FALSE))
+    gwnc = open.nc(grep("GWBUCKPARM_CONUS_FullRouting.nc", f, value = TRUE))
 
     on.exit(close.nc(gwnc))
 
@@ -133,17 +127,17 @@ add_cfe_noahowp_attributes = function(gpkg = NULL,
         var.get.nc(gwnc, x)) %>%
         bind_cols() %>%
         setNames(vars) %>%
-        rename(comid = .data$ComID) %>%
-        mutate(comid = as.integer(.data$comid)) %>%
-        inner_join(select(crosswalk, .data$id, .data$comid), by = 'comid') %>%
+        rename(comid = ComID) %>%
+        mutate(comid = as.integer(comid)) %>%
+        inner_join(select(crosswalk, divide_id, comid), by = 'comid') %>%
         filter(complete.cases(.)) %>%
         filter(!duplicated(.)) %>%
-        group_by(.data$id) %>%
+        group_by(divide_id) %>%
         summarize(across(everything(), ~ round(
-          weighted.mean(.x, w = .data$Area_sqkm, na.rm = TRUE),
+          weighted.mean(.x, w = Area_sqkm, na.rm = TRUE),
           precision
         ))) %>%
-        select(-.data$comid, -.data$Area_sqkm)
+        select(-comid, -Area_sqkm)
     })
 
     hyaggregate_log("INFO", glue('Getting weighted mean: {paste(vars, collapse = ", ")}'),  verbose)
@@ -158,30 +152,26 @@ add_cfe_noahowp_attributes = function(gpkg = NULL,
         var.get.nc(gwnc, x)) %>%
         bind_cols() %>%
         setNames(vars_mode) %>%
-        rename(comid = .data$ComID) %>%
-        inner_join(select(crosswalk, .data$id, .data$comid), by = 'comid') %>%
+        rename(comid = ComID) %>%
+        inner_join(select(crosswalk, divide_id, comid), by = 'comid') %>%
         filter(complete.cases(.)) %>%
         filter(!duplicated(.)) %>%
-        group_by(.data$id) %>%
-        summarize(Expon = getmode(floor(.data$Expon)))
+        group_by(divide_id) %>%
+        summarize(Expon = getmode(floor(Expon)))
     })
 
     hyaggregate_log("INFO", glue('Getting mode: {paste(vars_mode, collapse = ", ")}'),  verbose)
 
-    traits = left_join(gwparams_means, gwparams_mode, by = ID) %>%
-      setNames(c('id', paste0('gw_', names(.)[-1]))) %>%
-      right_join(exe, by = ID)
-
-  names(traits) = gsub("_Time=1", "", names(traits))
+    traits = left_join(gwparams_means, gwparams_mode, by = "divide_id") %>%
+      setNames(c('divide_id', paste0('gw_', names(.)[-1]))) %>%
+      full_join(exe, by = 'divide_id')
 
   log_appender(appender_console)
 
-  if(add_to_gpkg){
-    write_sf(traits, gpkg, lyr)
-    return(gpkg)
-  } else {
-    return(traits)
-  }
+  #write_sf(traits, export_gpkg, lyr)
+  arrow::write_parquet(traits, outfile)
+
+  outfile
 }
 
 

@@ -15,7 +15,11 @@
 #' @importFrom sf st_centroid st_coordinates st_drop_geometry
 #' @importFrom hydrofab add_areasqkm
 
-add_forcing_attributes = function(gpkg, dem, verbose = TRUE){
+add_forcing_attributes = function(gpkg, export_gpkg, add_grid = NULL, dem, verbose = TRUE){
+
+  if(is.null(export_gpkg)){
+    export_gpkg = gpkg
+  }
 
   geom = read_hydrofabric(gpkg, realization = "catchments")[[1]]
 
@@ -34,34 +38,39 @@ add_forcing_attributes = function(gpkg, dem, verbose = TRUE){
 
   hyaggregate_log("INFO", "Building Weight Grid", verbose)
 
-  w = weight_grid(DEM_m, geom, "id", verbose)
+  w = weight_grid(DEM_m, geom, "divide_id", verbose)
+
+  if(!is.null(add_grid)){
+    hyaggregate_log("INFO", "Writing weight grid...", verbose)
+    write_sf(w, export_gpkg, add_grid)
+  }
 
   hyaggregate_log("INFO", "Building summaries", verbose)
 
   summary1 = execute_zonal(c(DEM_m, slope_m_km),
                            w = w,
                            fun = "mean",
-                           ID = "id")
+                           ID = "divide_id")
 
-  names(summary1) = c("id", "elevation", "slope_m_km")
+  names(summary1) = c("divide_id", "elevation", "slope_m_km")
 
   summary2 = execute_zonal(aspect,
                            w = w,
                            fun = zonal:::circular_mean,
-                           ID = "id")
+                           ID = "divide_id")
 
   out = suppressWarnings({
     geom %>%
       mutate(areasqkm = add_areasqkm(.)) %>%
-      select(id, areasqkm) %>%
+      select(divide_id, areasqkm) %>%
       st_centroid() %>%
       st_transform(4326) %>%
       mutate(cetroid_lon = st_coordinates(.)[,1], centroid_lat = st_coordinates(.)[,2]) %>%
       st_drop_geometry( ) %>%
-      right_join(left_join(summary1, summary2, by = "id"), by = "id")
+      right_join(left_join(summary1, summary2, by = "divide_id"), by = "divide_id")
   })
 
-  write_sf(out, gpkg, "forcing_attributes", overwrite = TRUE)
+  write_sf(out, export_gpkg, "forcing_dem_attributes", overwrite = TRUE)
 
-  gpkg
+  export_gpkg
 }

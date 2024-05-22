@@ -9,6 +9,7 @@ network_list object.}
 \usage{
 apply_nexus_topology(
   gpkg,
+  vpu = NULL,
   nexus_prefix = "nex-",
   terminal_nexus_prefix = "tnx-",
   coastal_nexus_prefix = "cnx-",

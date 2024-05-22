@@ -53,7 +53,6 @@ interpolate_schism = function(AOI, schism = gpkg, outfile = NULL, algo = "invdis
       '<OGRVRTDataSource>',
       '<OGRVRTLayer name="schism_nodes">',
       glue('<SrcDataSource>{file.path(getwd(), schism)}</SrcDataSource>'),
-      #'<SrcDataSource>/Volumes/Transcend/depths.csv</SrcDataSource>',
       '<GeometryType>wkbPoint</GeometryType>',
       '<LayerSRS>EPSG:4326</LayerSRS>',
       '<GeometryField encoding="PointFromColumns" x="X" y="Y" z="Z"/>',

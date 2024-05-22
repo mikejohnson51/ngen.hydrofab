@@ -1,125 +1,159 @@
-pacman::p_load(glue, hydrofab, archive, sf, nhdplusTools, dplyr)
+pacman::p_load(hydrofabric)
 devtools::load_all()
 sf_use_s2(FALSE)
 
 ## -- STEP 1: VPU base NextGen Artifacts --- #
 
-#type = 'uniform_national'
-type = 'global_uniform'
+folder = '04_global_uniform'
 
-base = '/Volumes/Transcend/ngen/CONUS-hydrofabric/calibration'
+base = glue('/Volumes/MyBook/nextgen/global_uniform')
 
-f = list.files(base,
-               full.names = TRUE,
-               pattern = type)
-f = f[grepl(".gpkg$", f)]
+nwm_dir = '/Volumes/Transcend/nwmCONUS-v216'
 
-dem = correct_nwm_spatial(raster::raster('/Volumes/Transcend/nwmCONUS-v216/geo_em.d01_1km.nc', varname = "HGT_M"))
+process = data.frame(files = list.files(base, full.names = TRUE, pattern = ".+gpkg$")) %>%
+  mutate(VPU = gsub(".gpkg", "", gsub(paste0("uniform", "_"), "", basename(files))),
+         hf_outfile =  glue('/Volumes/MyBook/v20/v21/gpkg/nextgen_{VPU}.gpkg'))
+
+glue("{dirname(base)}/05_nextgen/nextgen_{VPU}.gpkg")
 
 
-for(i in 1:length(f)){
+# Produce Nextgen Fabrics -------------------------------------------------
 
-  VPU = gsub(".gpkg", "", gsub(paste0(type, "_"), "", basename(f[i])))
+for(i in 1:nrow(process)){
 
-  message(VPU)
+  if(!file.exists(process$hf_outfile[i])){
+    dir.create(dirname(process$hf_outfile[i]), showWarnings = FALSE)
 
-  outfile = glue("{base}/nextgen_{VPU}.gpkg")
+     o    = apply_nexus_topology(gpkg        = process$files[i],
+                                 vpu         = process$VPU[i],
+                                 export_gpkg = process$hf_outfile[i]) %>%
+         add_flowpath_attributes() %>%
+         add_lake_attributes(lake_path = '/Volumes/Transcend/nwmCONUS-v216/LAKEPARM_CONUS.nc') %>%
+         append_style(layer_names = c("nexus", "hydrolocations", "flowpaths", "divides", "lakes"))
 
-  dir.create(dirname(outfile), showWarnings = FALSE)
-
-  ngen    = apply_nexus_topology(gpkg = f[i])
-
-  outfile = write_hydrofabric(ngen, outfile)
-  outfile = add_flowpath_attributes(outfile)
-  outfile = add_lake_attributes(outfile, lake_path = '/Volumes/Transcend/nwmCONUS-v216/LAKEPARM_CONUS.nc')
-
-  outfile = add_cfe_noahowp_attributes(gpkg      = outfile,
-                        dir                 = '/Volumes/Transcend/nwmCONUS-v216/',
-                        add_to_gpkg         = TRUE,
-                        add_weights_to_gpkg = FALSE,
-                        log                 = TRUE,
-                        overwrite = TRUE)
-
-  outfile = add_forcing_attributes(outfile, dem)
-
-  st_layers(outfile)
-#
-#   dir = write_ngen_dir(outfile, overwrite = TRUE)
-#   unlink(paste0(dir, ".zip"))
-#   archive_write_dir(paste0(dir, ".zip"), dir)
-
+     bas = read_sf(o, "divides")
+     bas = clean_geometry(bas, ID = "divide_id")
+     write_sf(bas, o, "divides")
+  }
 }
 
 
-## -- STEP 2: National Merge --- ##
+national_merge(gpkg = process$hf_outfile, outfile = '/Volumes/MyBook/v20/v21/conus.gpkg')
 
-outfile = national_merge(files, glue("{base}/conus.gpkg"))
-dir = write_ngen_dir(outfile)
-archive_write_dir(paste0(dir, ".zip"), dir)
+ # Build National Topology -------------------------------------------------
+vaa = get_vaa("hydroseq") %>%
+  rename(hf_id = comid, hf_hydroseq = hydroseq)
+
+xx = "/Volumes/MyBook/v20/v21/conus.gpkg" %>%
+  read_sf('network') %>%
+  left_join(vaa, by = "hf_id")
+
+write_parquet(xx, "/Volumes/MyBook/v20/v21/conus_net.parquet")
 
 
-source("secret/aws_creds.R")
-aws.dir = 's3://nextgen-hydrofabric/v1.2/'
 
-system(glue('aws s3 sync {base} {aws.dir}'))
-
-
-## -- STEP 3: CAMEL EXTRACTS --- ##
-
-gpkg = glue("{base}/nextgen_{VPU}.gpkg") #/Volumes/Transcend/ngen/CONUS-hydrofabric/calibration/nextgen_01.gpkg
-
-c  = read_sf(gpkg, "lookup_table") %>%
-  filter(POI_TYPE == "Gages")
-
-dir.create('/Volumes/Transcend/ngen/CONUS-hydrofabric/calibration/subsets')
-
-for(i in 1:nrow(c)){
-
-  here = glue("{base}/subsets/gauge_{c$POI_VALUE[i]}.gpkg")
-
-  x = subset_network(gpkg             = gpkg,
-                     origin           = c$toid[i],
-                     attribute_layers = c("flowpath_attributes",
-                                          "lake_attributes",
-                                          "cfe_noahowp_attributes",
-                                          "forcing_attributes"),
-                     export_gpkg = here)
-
-  message(i, " of ", nrow(c))
-
+# Build Supplementary Data -------------------------------------------------
+for(i in 1:nrow(process)){
+o    = add_cfe_noahowp_attributes(gpkg        = process$hf_outfile[i],
+                                  nwm_dir     = "data",
+                                  outfile     = glue('/Volumes/Transcend/ngen/CONUS-hydrofabric/05_nextgen/nextgen_{process$VPU[i]}_cfe_noahowp.parquet'))
+message(i)
 }
 
+dem = correct_nwm_spatial("data/dem.tif")
+forcing_files = list.files('/Users/mjohnson/Downloads/extended_tifs', full.names = TRUE)
 
+for(i in 1:nrow(process)) {
 
+  if (any(
+    !layer_exists(process$ext_outfile[i], 'forcing_dem_attributes'),
+    !layer_exists(process$ext_outfile[i], 'nwm_weight_grid')
+  )) {
 
-
-log_info("{nrow(c)} camels basins to process!")
-
-for(j in 1:nrow(c)){
-
-  cc = c[j,]
-
-  if(is.na(cc$VPUID)){
-    new = st_nearest_feature(cc, vpus)
-    cc$VPUID = vpus$VPUID[new]
+    add_forcing_attributes(
+      process$hf_outfile[i],
+      export_gpkg = process$ext_outfile[i],
+      add_grid = 'nwm_weight_grid',
+      dem
+    )
   }
 
-  here = glue("{base}/camels/VPU{cc$VPUID}/gauge_{cc$gauge_id}.gpkg")
-  dir.create(dirname(here), recursive = TRUE, showWarnings = FALSE)
-  gpkg = glue('{base}/nextgen_{cc$VPUID}.gpkg')
+  hy   = read_hydrofabric(process$hf_outfile[i], realization = "catchments")[[1]]
 
-  x = subset_network(gpkg             = gpkg,
-                     origin           = find_origin(gpkg, cc, "divides"),
-                     export_gpkg      = here,
-                     attribute_layers = c("cfe_noahowp_attributes", 'forcing_metadata'),
-                     overwrite = FALSE)
+  for (j in 1:length(forcing_files)) {
+    n = paste0(gsub(".tif", "", basename(forcing_files[j])), "_weight_grid")
 
-  log_info(here)
+      if (!layer_exists(process$ext_outfile[i], n)) {
+        out = weight_grid(
+          forcing_files[j],
+          geom = hy,
+          ID = "divide_id",
+          progress = TRUE
+        )
+
+        tmp = terra::rowColFromCell(rast(forcing_files[j]), out$cell) %>%
+          as.data.frame() %>%
+          setNames(c("row", "col"))
+
+        write_sf(cbind(out, tmp), process$ext_outfile[i], n)
+      }
+    }
+
+  # if(!layer_exists(process$ext_outfile[i], 'twi_distributions')){
+  #
+  #   system.time({
+  #     o = warp('/vsis3/nextgen-hydrofabric/DEM-products/twi.vrt', hy, 500)
+  #
+  #     xx =  execute_zonal(rast(o),
+  #                         geom = hy,
+  #                         fun = zonal:::binned_json,
+  #                         ID = "divide_id",
+  #                         area_weight = FALSE,
+  #                         join = TRUE)
+  #     unlink(o)
+  #   })
+  #
+  #   write_sf(xx, process$ext_outfile[i], "twi_distributions")
+  # }
 }
 
+## -- STEP 2: National Merge --- ##
+unlink(glue("{dirname(base)}/05_nextgen/conus.gpkg"))
+outfile = nat_merge(gpkg = process$hf_outfile,
+                    outfile = glue("{dirname(base)}/05_nextgen/conus.gpkg"))
 
 
+outfile = nat_merge(gpkg = process$ext_outfile,
+                    outfile = glue("{dirname(base)}/05_nextgen/conus_ext.gpkg"))
 
+
+nat_merge = function(gpkg, outfile, verbose = TRUE){
+
+  all = st_layers(gpkg[1])$name
+
+  all = all[all != "layer_styles"]
+
+  for(i in 1:length(all)){
+    hyaggregate_log("INFO", glue("Merging: {all[i]}"), verbose)
+    tmp = list()
+    for(j in 1:length(gpkg)){
+      tmp[[j]] = read_sf(gpkg[j], all[i])
+      message("\tread ", j," of ", length(gpkg))
+    }
+
+    write_sf(bind_rows(tmp), outfile, all[i])
+    rm(tmp)
+  }
+
+  outfile
+}
+
+geom = read_sf('/Volumes/Transcend/ngen/CONUS-hydrofabric/pre-release/camels/VPU01/gauge_01022500.gpkg',
+               "divides")
+dem = opendap.catalog::dap('/vsis3/nextgen-hydrofabric/dem.vrt', AOI = geom)
+
+plot(dem)
+plot(geom$geom, add=T)
 
 
 ## -- STEP 3: CAMEL EXTRACTS --- ##
@@ -143,15 +177,19 @@ for(j in 1:nrow(c)){
     cc$VPUID = vpus$VPUID[new]
   }
 
-  here = glue("{base}/camels/VPU{cc$VPUID}/gauge_{cc$gauge_id}.gpkg")
+  here = glue("{dirname(base)}/camels/VPU{cc$VPUID}/gauge_{cc$gauge_id}.gpkg")
   dir.create(dirname(here), recursive = TRUE, showWarnings = FALSE)
-  gpkg = glue('{base}/nextgen_{cc$VPUID}.gpkg')
+  gpkg = glue('{dirname(base)}/nextgen/nextgen_{cc$VPUID}.gpkg')
 
-  x = subset_network(gpkg             = gpkg,
-                     origin           = find_origin(gpkg, cc, "divides"),
-                     export_gpkg      = here,
-                     attribute_layers = c("cfe_noahowp_attributes", 'forcing_metadata'),
-                     overwrite = FALSE)
+  origin =   read_sf(gpkg, "hydrolocations_lookup") %>%
+    filter(hl_link == cc$gauge_id)
+
+  if(nrow(origin) > 0){
+    x = subset_hf(gpkg             = gpkg,
+                  origin           = origin$id,
+                  export_gpkg      = here)
+  }
+
 
   log_info(here)
 }
