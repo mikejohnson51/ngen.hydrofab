@@ -90,7 +90,7 @@ add_cfe_noahowp_attributes = function(gpkg = NULL,
     w = nwm_w_1000m,
     ID = 'divide_id',
     drop = 'divide_id',
-    fun = zonal:::geometric_mean
+    fun = zonal::geometric_mean
   )
 
   hyaggregate_log("INFO", glue('Getting geometric_mean: {paste(soil_gm_var, collapse = ", ")}'),  verbose)

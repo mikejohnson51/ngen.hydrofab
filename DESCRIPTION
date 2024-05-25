@@ -1,9 +1,11 @@
 Package: ngen.hydrofab
 Title: Hydrologic and Hydrographic Network Aggregating Tools Based on HY_Features
-Version: 0.0.3
+Version: 0.0.4
 Authors@R: 
-    person("Mike", "Johnson", , "mikecp11@gmail.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+    person("Mike", "Johnson", 
+        email = "jjohnson@lynker.com", 
+        role = c("aut", "cre")
+        )
 Description: A collection of tools for creating hydrofabics for NOAA NextGen using hydrofab
 License: MIT + file LICENSE
 Encoding: UTF-8
@@ -15,14 +17,16 @@ BugReports: https://github.com/noaa-owp/ngne.hydrofab/issues
 Depends: 
     R (>= 3.5.0)
 Imports: 
+    arrow,
     aws.s3,
     dplyr,
     fst,
     httr,
+    glue,
     hydrofab,
     jsonlite,
     logger,
-    magrittr,
+    tools,
     nhdplusTools,
     RNetCDF,
     sbtools,

@@ -56,7 +56,7 @@ add_forcing_attributes = function(gpkg, export_gpkg, add_grid = NULL, dem, verbo
 
   summary2 = execute_zonal(aspect,
                            w = w,
-                           fun = zonal:::circular_mean,
+                           fun = zonal::circular_mean,
                            ID = "divide_id")
 
   out = suppressWarnings({

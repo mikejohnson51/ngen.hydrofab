@@ -6,17 +6,19 @@
 \usage{
 add_flowpath_attributes(
   gpkg,
-  rl_vars = c("comid", "Qi", "MusK", "MusX", "n", "So", "ChSlp", "BtmWdth", "time",
-    "Kchan", "nCC", "TopWdthCC", "TopWdth"),
-  rl_path = get_routelink_path()
+  rl_vars = c("hf_id", "rl_Qi_m3s", "rl_MusK", "rl_MusX", "rl_n", "rl_So", "rl_ChSlp",
+    "rl_BtmWdth_m", "rl_Kchan_mmhr", "rl_nCC", "rl_TopWdthCC_m", "rl_TopWdth_m"),
+  hf_version = "2.2",
+  source = "s3://lynker-spatial/hydrofabric",
+  add_to_gpkg = TRUE
 )
 }
 \arguments{
 \item{rl_vars}{routelink variables}
 
-\item{rl_path}{routelink path (see get_routelink_path())}
-
 \item{flowpaths}{sf LINESTRING}
+
+\item{rl_path}{routelink path (see get_routelink_path())}
 }
 \value{
 data.frame

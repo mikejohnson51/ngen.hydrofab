@@ -172,58 +172,68 @@ add_slope = function(flowpaths) {
 #' @param rl_path routelink path (see get_routelink_path())
 #' @return data.frame
 #' @export
-#' @importFrom nhdplusTools get_vaa
-#' @importFrom sf st_drop_geometry
-#' @importFrom dplyr select mutate rename right_join rename right_join across everything summarize `%>%` bind_cols
+#' @importFrom dplyr select mutate rename right_join rename right_join across everything summarize `%>%` bind_cols collect
 #' @importFrom stats weighted.mean
-#' @importFrom tidyr unnest
-#' @importFrom RNetCDF open.nc close.nc var.get.nc
-
+#' @importFrom glue glue
+#' @importFrom arrow open_dataset
 
 add_flowpath_attributes   = function (gpkg,
-                                     rl_vars = c("comid", "Qi", "MusK", "MusX", "n", "So", "ChSlp", "BtmWdth",
-                                                 "time", "Kchan", "nCC", "TopWdthCC", "TopWdth"),
-                                     rl_path = get_routelink_path()) {
+                                      rl_vars = c("hf_id", "rl_Qi_m3s", "rl_MusK", "rl_MusX", "rl_n",
+                                                  "rl_So", "rl_ChSlp", "rl_BtmWdth_m",
+                                                  "rl_Kchan_mmhr",
+                                                  "rl_nCC", "rl_TopWdthCC_m", "rl_TopWdth_m"),
+                                      hf_version = "2.2",
+                                      source = "s3://lynker-spatial/hydrofabric",
+                                      add_to_gpkg = TRUE) {
 
-  net = read_sf(gpkg, "network")
+  net = read_sf(gpkg, "network") %>%
+    select(id, hf_id, full_length = lengthkm) %>%
+    filter(complete.cases(.))
 
-  length_table = get_vaa("lengthkm")
-
-  net_map = net %>%
-    select(id, comid = hf_id ) %>%
-    filter(complete.cases(.)) %>%
-    left_join(length_table, by = "comid") %>%
+  net_map =  open_dataset(glue("{source}/v{hf_version}/reference/conus_network")) %>%
+    select(hf_id = id, lengthkm) %>%
+    inner_join(net, by = "hf_id") %>%
+    collect() %>%
     group_by(id) %>%
     mutate(totLength = sum(lengthkm),
-           perLength = round(lengthkm / totLength, 3),
-           totLength = NULL,
-           lengthkm = NULL) %>%
-    ungroup()
+           perLength = lengthkm / totLength) %>%
+    ungroup() %>%
+    select(hf_id, id, perLength)
 
-  if (!"Length" %in% rl_vars) { rl_vars = c("Length", rl_vars) }
+  if (!"rl_Length_m" %in% rl_vars) { rl_vars = c("rl_Length_m", rl_vars) }
 
-  df = get_routelink(atts = rl_vars, path = rl_path) %>%
-    right_join(net_map, by = "comid") %>%
+  df = open_dataset(glue('{source}/v{hf_version}/reference/conus_routelink')) %>%
+    select(any_of(rl_vars)) %>%
+    filter(hf_id %in% net_map$hf_id) %>%
+    collect() %>%
+    right_join(net_map, by = "hf_id") %>%
     group_by(id) %>%
     summarize(across(everything(), ~ round(
       weighted.mean(x = ., w = perLength, na.rm = TRUE), 8))) %>%
-    select(-comid, -Length, -perLength) %>%
-    left_join(select(net, id, lengthkm), by = 'id') %>%
+    select(-hf_id, -rl_Length_m, -perLength) %>%
+    left_join(select(net, id, lengthkm = full_length), by = 'id') %>%
     mutate(length_m = lengthkm * 1000, lengthkm = NULL) %>%
     distinct()
 
-  df2 = get_routelink(c("comid", "gages", "NHDWaterbodyComID"), path = rl_path) %>%
-    right_join(net_map, by = 'comid') %>%
-    group_by(id) %>%
-    summarize(rl_gages = paste(gages[!is.na(gages)], collapse = ","),
-              rl_NHDWaterbodyComID = paste(unique(NHDWaterbodyComID[!is.na(NHDWaterbodyComID)]), collapse = ",")) %>%
-    left_join(df, by = "id") %>%
-    mutate(rl_gages = ifelse(rl_gages == "", NA, rl_gages),
-           rl_NHDWaterbodyComID = ifelse(rl_NHDWaterbodyComID == "", NA, rl_NHDWaterbodyComID)) %>%
-    mutate(rl_gages = as.character(rl_gages),
-           rl_NHDWaterbodyComID = as.character(rl_NHDWaterbodyComID))
+  # df2 = arrow::open_dataset('/Users/mjohnson/hydrofabric/v2.2/reference/routelink_ls') %>%
+  #  select(c("hf_id", #"rl_gages",
+  #           "rl_NHDWaterbodyComID")) %>%
+  #   filter(hf_id %in% net_map$hf_id) %>%
+  #   collect() %>%
+  #   right_join(net_map, by = "hf_id")  %>%
+  #   group_by(id) %>%
+  #   summarize(#rl_gages = paste(gages[!is.na(gages)], collapse = ","),
+  #             rl_NHDWaterbodyComID = paste(unique(NHDWaterbodyComID[NHDWaterbodyComID != -9999]), collapse = ",")) %>%
+  #   left_join(df, by = "id") %>%
+  #   mutate(#rl_gages = ifelse(rl_gages == "", NA, rl_gages),
+  #          rl_NHDWaterbodyComID = ifelse(rl_NHDWaterbodyComID == "", NA, rl_NHDWaterbodyComID)) %>%
+  #   mutate(#rl_gages = as.character(rl_gages),
+  #          rl_NHDWaterbodyComID = as.character(rl_NHDWaterbodyComID))
 
-  write_sf(df2, gpkg, "flowpath_attributes")
-
-  gpkg
+  if(add_to_gpkg){
+    write_sf(df, gpkg, "flowpath_attributes")
+    return(gpkg)
+  } else {
+    return(df)
+  }
 }
