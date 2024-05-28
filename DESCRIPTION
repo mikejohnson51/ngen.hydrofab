@@ -37,3 +37,6 @@ Imports:
     tidyr,
     tools,
     zonal
+Remotes:
+    mikejohnson51/hydrofab
+    mikejohnson51/zonal
